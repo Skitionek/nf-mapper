@@ -1,13 +1,12 @@
 """Tests for nf_mapper.mermaid.
 
-These tests double as usage examples for the mermaid module.
+These tests verify the gitGraph output format using both synthetic pipelines
+and real nf-core fixture files.
 """
 
 from __future__ import annotations
 
 import os
-
-import pytest
 
 from nf_mapper.mermaid import pipeline_to_mermaid
 from nf_mapper.parser import NfProcess, NfWorkflow, ParsedPipeline, parse_nextflow_file
@@ -17,11 +16,6 @@ FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
 def fixture_path(name: str) -> str:
     return os.path.join(FIXTURES, name)
-
-
-# ---------------------------------------------------------------------------
-# Helpers to build minimal ParsedPipeline instances
-# ---------------------------------------------------------------------------
 
 
 def _make_pipeline(
@@ -39,179 +33,200 @@ def _make_pipeline(
 
 
 # ---------------------------------------------------------------------------
-# Basic structure tests
+# Output structure
 # ---------------------------------------------------------------------------
 
 
-class TestPipelineToMermaidStructure:
+class TestGitGraphStructure:
     def test_returns_string(self):
-        """pipeline_to_mermaid always returns a string."""
-        pipeline = _make_pipeline()
-        result = pipeline_to_mermaid(pipeline)
-        assert isinstance(result, str)
+        assert isinstance(pipeline_to_mermaid(_make_pipeline()), str)
 
-    def test_starts_with_flowchart(self):
-        """Output begins with a flowchart declaration."""
-        pipeline = _make_pipeline()
-        result = pipeline_to_mermaid(pipeline)
-        assert "flowchart" in result
+    def test_starts_with_gitgraph(self):
+        result = pipeline_to_mermaid(_make_pipeline())
+        assert result.startswith("gitGraph")
 
-    def test_default_direction_lr(self):
-        """Default direction is LR."""
-        pipeline = _make_pipeline()
-        result = pipeline_to_mermaid(pipeline)
-        assert "flowchart LR" in result
-
-    def test_custom_direction_td(self):
-        """Direction can be overridden to TD."""
-        pipeline = _make_pipeline()
-        result = pipeline_to_mermaid(pipeline, direction="TD")
-        assert "flowchart TD" in result
-
-    def test_title_is_included(self):
-        """When a title is given it appears in YAML front matter."""
-        pipeline = _make_pipeline()
-        result = pipeline_to_mermaid(pipeline, title="My Pipeline")
-        assert "title: My Pipeline" in result
+    def test_title_adds_front_matter(self):
+        result = pipeline_to_mermaid(_make_pipeline(), title="My Pipeline")
         assert "---" in result
+        assert "title: My Pipeline" in result
+        lines = result.splitlines()
+        assert lines[0] == "---"
+        assert lines[1] == "title: My Pipeline"
+        assert lines[2] == "---"
+        assert lines[3] == "gitGraph"
 
     def test_no_title_no_front_matter(self):
-        """Without a title, no YAML front matter is added."""
-        pipeline = _make_pipeline()
-        result = pipeline_to_mermaid(pipeline)
+        result = pipeline_to_mermaid(_make_pipeline())
         assert "---" not in result
 
+    def test_no_flowchart_keyword(self):
+        """The output must never contain the old flowchart syntax."""
+        result = pipeline_to_mermaid(_make_pipeline(
+            processes=[NfProcess(name="A"), NfProcess(name="B")],
+            connections=[("A", "B")],
+        ))
+        assert "flowchart" not in result
+        assert "-->" not in result
+
 
 # ---------------------------------------------------------------------------
-# Process node rendering
+# Process / commit rendering
 # ---------------------------------------------------------------------------
 
 
-class TestProcessNodeRendering:
-    def test_process_node_appears(self):
-        """Every process produces a stadium-shaped node."""
-        pipeline = _make_pipeline(processes=[NfProcess(name="FASTQC")])
-        result = pipeline_to_mermaid(pipeline)
-        assert "FASTQC" in result
-        assert "([FASTQC])" in result
+class TestCommitRendering:
+    def test_process_becomes_commit(self):
+        result = pipeline_to_mermaid(_make_pipeline(processes=[NfProcess(name="FASTQC")]))
+        assert 'commit id: "FASTQC"' in result
 
-    def test_multiple_process_nodes(self):
-        """Multiple processes each appear as nodes."""
+    def test_multiple_processes_all_committed(self):
         pipeline = _make_pipeline(
             processes=[NfProcess(name="STEP_A"), NfProcess(name="STEP_B")]
         )
         result = pipeline_to_mermaid(pipeline)
-        assert "STEP_A" in result
-        assert "STEP_B" in result
+        assert 'commit id: "STEP_A"' in result
+        assert 'commit id: "STEP_B"' in result
+
+    def test_single_process_no_branch(self):
+        result = pipeline_to_mermaid(_make_pipeline(processes=[NfProcess(name="LONE")]))
+        assert "branch" not in result
+        assert 'commit id: "LONE"' in result
 
 
 # ---------------------------------------------------------------------------
-# Edge / connection rendering
+# Linear chains
 # ---------------------------------------------------------------------------
 
 
-class TestEdgeRendering:
-    def test_connection_renders_arrow(self):
-        """A connection appears as a --> arrow."""
+class TestLinearChain:
+    def test_linear_chain_on_main(self):
+        """A → B → C all appear as commits; no branches needed."""
         pipeline = _make_pipeline(
-            processes=[NfProcess(name="A"), NfProcess(name="B")],
-            connections=[("A", "B")],
-        )
-        result = pipeline_to_mermaid(pipeline)
-        assert "A --> B" in result or "A --> B" in result.replace(" ", "")
-
-    def test_no_connection_no_arrow(self):
-        """Without connections no arrows are drawn."""
-        pipeline = _make_pipeline(processes=[NfProcess(name="LONE")])
-        result = pipeline_to_mermaid(pipeline)
-        assert "-->" not in result
-
-    def test_multiple_connections(self):
-        """Multiple connections all appear in the output."""
-        pipeline = _make_pipeline(
-            processes=[
-                NfProcess(name="A"),
-                NfProcess(name="B"),
-                NfProcess(name="C"),
-            ],
+            processes=[NfProcess(name="A"), NfProcess(name="B"), NfProcess(name="C")],
             connections=[("A", "B"), ("B", "C")],
         )
         result = pipeline_to_mermaid(pipeline)
-        assert "-->" in result
-        assert "A" in result
-        assert "B" in result
-        assert "C" in result
+        assert 'commit id: "A"' in result
+        assert 'commit id: "B"' in result
+        assert 'commit id: "C"' in result
+        assert "branch" not in result
 
-
-# ---------------------------------------------------------------------------
-# Subgraph / grouped rendering
-# ---------------------------------------------------------------------------
-
-
-class TestGroupedRendering:
-    def test_subgraph_when_no_connections(self):
-        """When there are no connections, workflow subgraphs are used."""
+    def test_linear_order_preserved(self):
         pipeline = _make_pipeline(
-            processes=[NfProcess(name="PROC_A"), NfProcess(name="PROC_B")],
-            workflows=[
-                NfWorkflow(name="MYWF", calls=["PROC_A", "PROC_B"])
-            ],
+            processes=[NfProcess(name="FIRST"), NfProcess(name="SECOND")],
+            connections=[("FIRST", "SECOND")],
         )
         result = pipeline_to_mermaid(pipeline)
-        assert "subgraph" in result
-        assert "MYWF" in result
+        idx_first = result.index("FIRST")
+        idx_second = result.index("SECOND")
+        assert idx_first < idx_second
 
-    def test_no_subgraph_when_connections_present(self):
-        """When connections are present, subgraphs are not used."""
+
+# ---------------------------------------------------------------------------
+# Branching / parallel paths
+# ---------------------------------------------------------------------------
+
+
+class TestBranching:
+    def test_parallel_process_gets_branch(self):
+        """A QC process parallel to the main chain goes on a branch."""
+        # Main: A → B.  QC: C (standalone, no connections)
         pipeline = _make_pipeline(
-            processes=[NfProcess(name="A"), NfProcess(name="B")],
+            processes=[NfProcess(name="A"), NfProcess(name="B"), NfProcess(name="QC")],
             connections=[("A", "B")],
         )
         result = pipeline_to_mermaid(pipeline)
-        assert "subgraph" not in result
+        assert "branch" in result
+        assert "checkout" in result
+
+    def test_parallel_branch_then_back_to_main(self):
+        """After a branch the diagram returns to main."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="A"), NfProcess(name="B"), NfProcess(name="QC")],
+            connections=[("A", "B")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "checkout main" in result
+
+    def test_no_branch_for_linear_pipeline(self):
+        """A purely linear pipeline has no branches."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="X"), NfProcess(name="Y")],
+            connections=[("X", "Y")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "branch" not in result
+
+    def test_workflow_order_used_when_no_connections(self):
+        """Without connections, workflow call order determines commit order."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="C"), NfProcess(name="A"), NfProcess(name="B")],
+            workflows=[NfWorkflow(name="WF", calls=["A", "B", "C"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        idx_a = result.index('"A"')
+        idx_b = result.index('"B"')
+        idx_c = result.index('"C"')
+        assert idx_a < idx_b < idx_c
 
 
 # ---------------------------------------------------------------------------
-# End-to-end tests using fixture files
+# End-to-end – handcrafted fixtures
 # ---------------------------------------------------------------------------
 
 
-class TestEndToEnd:
-    def test_simple_workflow_diagram(self):
-        """End-to-end: simple_workflow.nf produces a valid Mermaid diagram."""
+class TestHandcraftedEndToEnd:
+    def test_simple_workflow(self):
         pipeline = parse_nextflow_file(fixture_path("simple_workflow.nf"))
         result = pipeline_to_mermaid(pipeline, title="Simple QC")
-
-        assert "flowchart LR" in result
+        assert "gitGraph" in result
         assert "title: Simple QC" in result
-        assert "FASTQC" in result
-        assert "MULTIQC" in result
-        # Should detect the FASTQC -> MULTIQC connection
-        assert "-->" in result
+        assert 'commit id: "FASTQC"' in result
+        assert 'commit id: "MULTIQC"' in result
+        # Linear chain: FASTQC before MULTIQC, no branches
+        assert result.index("FASTQC") < result.index("MULTIQC")
+        assert "branch" not in result
 
-    def test_complex_workflow_diagram(self):
-        """End-to-end: complex_workflow.nf produces a diagram with connections."""
+    def test_complex_workflow(self):
         pipeline = parse_nextflow_file(fixture_path("complex_workflow.nf"))
         result = pipeline_to_mermaid(pipeline)
+        assert "gitGraph" in result
+        # Main chain should include the linear processing path
+        for name in ("TRIMGALORE", "STAR_ALIGN", "SAMTOOLS_SORT", "FEATURECOUNTS"):
+            assert name in result
+        # FASTQC is a parallel branch (no output connections)
+        assert "FASTQC" in result
+        assert "branch" in result  # FASTQC goes on a branch
 
-        assert "flowchart LR" in result
-        assert "STAR_ALIGN" in result
-        assert "SAMTOOLS_SORT" in result
-        assert "-->" in result
-
-    def test_minimal_process_diagram(self):
-        """End-to-end: minimal_process.nf produces a single node diagram."""
+    def test_minimal_process(self):
         pipeline = parse_nextflow_file(fixture_path("minimal_process.nf"))
         result = pipeline_to_mermaid(pipeline)
+        assert "gitGraph" in result
+        assert 'commit id: "HELLO"' in result
+        assert "branch" not in result
 
-        assert "HELLO" in result
-        assert "-->" not in result
 
-    def test_diagram_is_valid_mermaid_syntax(self):
-        """Output starts with a recognized Mermaid keyword."""
-        pipeline = parse_nextflow_file(fixture_path("simple_workflow.nf"))
+# ---------------------------------------------------------------------------
+# End-to-end – nf-core fixtures
+# ---------------------------------------------------------------------------
+
+
+class TestNfCoreEndToEnd:
+    def test_fetchngs_gitgraph(self):
+        """nf-core/fetchngs SRA workflow renders as a valid gitGraph."""
+        pipeline = parse_nextflow_file(fixture_path("nf_core_fetchngs_sra.nf"))
+        result = pipeline_to_mermaid(pipeline, title="nf-core/fetchngs")
+        assert result.startswith("---\ntitle: nf-core/fetchngs\n---\ngitGraph")
+        assert 'commit id: "SRA_IDS_TO_RUNINFO"' in result
+        assert 'commit id: "SRA_RUNINFO_TO_FTP"' in result
+        # Parallel tools (Aspera, sra-tools, FTP) show as branches
+        assert "branch" in result
+        assert "ASPERA_CLI" in result
+
+    def test_fastqc_module_gitgraph(self):
+        """nf-core FASTQC module renders as a single-commit gitGraph."""
+        pipeline = parse_nextflow_file(fixture_path("nf_core_fastqc_module.nf"))
         result = pipeline_to_mermaid(pipeline)
-        first_meaningful_line = next(
-            line for line in result.splitlines() if line.strip() and "---" not in line
-        )
-        assert first_meaningful_line.startswith("flowchart")
+        assert "gitGraph" in result
+        assert 'commit id: "FASTQC"' in result
+        assert "branch" not in result

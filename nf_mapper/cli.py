@@ -5,7 +5,7 @@ Usage
 .. code-block:: console
 
     nf-mapper pipeline.nf
-    nf-mapper --direction TD --title "My Pipeline" pipeline.nf -o diagram.md
+    nf-mapper --title "My Pipeline" pipeline.nf -o diagram.md
     nf-mapper pipeline.nf --format md
 """
 
@@ -21,7 +21,7 @@ from nf_mapper.parser import parse_nextflow_file
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="nf-mapper",
-        description="Convert a Nextflow pipeline (.nf) into a Mermaid flowchart.",
+        description="Convert a Nextflow pipeline (.nf) into a Mermaid gitGraph diagram.",
     )
     p.add_argument(
         "input",
@@ -34,12 +34,6 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         default=None,
         help="Write the diagram to FILE instead of stdout.",
-    )
-    p.add_argument(
-        "--direction",
-        choices=["LR", "TD", "RL", "BT"],
-        default="LR",
-        help="Mermaid flowchart direction (default: LR).",
     )
     p.add_argument(
         "--title",
@@ -67,7 +61,6 @@ def main(argv: list[str] | None = None) -> int:
     pipeline = parse_nextflow_file(args.input)
     diagram = pipeline_to_mermaid(
         pipeline,
-        direction=args.direction,
         title=args.title,
     )
 

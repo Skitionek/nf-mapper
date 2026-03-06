@@ -6,8 +6,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
 
@@ -16,7 +14,6 @@ def fixture_path(name: str) -> str:
 
 
 def run_cli(*args: str) -> subprocess.CompletedProcess:
-    """Run `python -m nf_mapper.cli <args>` and return the CompletedProcess."""
     return subprocess.run(
         [sys.executable, "-m", "nf_mapper.cli", *args],
         capture_output=True,
@@ -26,41 +23,31 @@ def run_cli(*args: str) -> subprocess.CompletedProcess:
 
 class TestCLI:
     def test_runs_successfully(self):
-        """CLI exits with 0 for a valid input file."""
         result = run_cli(fixture_path("simple_workflow.nf"))
         assert result.returncode == 0, result.stderr
 
-    def test_stdout_contains_flowchart(self):
-        """CLI outputs a Mermaid flowchart to stdout."""
+    def test_stdout_contains_gitgraph(self):
         result = run_cli(fixture_path("simple_workflow.nf"))
-        assert "flowchart" in result.stdout
+        assert "gitGraph" in result.stdout
 
     def test_stdout_contains_process_names(self):
-        """Process names appear in the CLI output."""
         result = run_cli(fixture_path("simple_workflow.nf"))
         assert "FASTQC" in result.stdout
         assert "MULTIQC" in result.stdout
 
-    def test_direction_flag(self):
-        """--direction TD changes flowchart direction."""
-        result = run_cli(fixture_path("simple_workflow.nf"), "--direction", "TD")
-        assert "flowchart TD" in result.stdout
+    def test_stdout_uses_commit_syntax(self):
+        result = run_cli(fixture_path("simple_workflow.nf"))
+        assert 'commit id:' in result.stdout
 
     def test_title_flag(self):
-        """--title adds YAML front matter."""
-        result = run_cli(
-            fixture_path("simple_workflow.nf"), "--title", "Test Pipeline"
-        )
+        result = run_cli(fixture_path("simple_workflow.nf"), "--title", "Test Pipeline")
         assert "title: Test Pipeline" in result.stdout
 
     def test_format_md(self):
-        """--format md wraps output in a fenced code block."""
         result = run_cli(fixture_path("simple_workflow.nf"), "--format", "md")
         assert "```mermaid" in result.stdout
-        assert "```" in result.stdout
 
     def test_output_file(self, tmp_path):
-        """--output writes to a file."""
         out = tmp_path / "diagram.md"
         result = run_cli(
             fixture_path("simple_workflow.nf"), "-o", str(out), "--format", "md"
@@ -71,13 +58,27 @@ class TestCLI:
         assert "FASTQC" in content
 
     def test_missing_input_file_error(self):
-        """CLI returns non-zero exit code when input file is missing."""
         result = run_cli("/nonexistent/pipeline.nf")
         assert result.returncode != 0
 
     def test_complex_workflow(self):
-        """CLI handles the complex workflow fixture."""
         result = run_cli(fixture_path("complex_workflow.nf"))
         assert result.returncode == 0
         assert "STAR_ALIGN" in result.stdout
-        assert "-->" in result.stdout
+        assert "commit id:" in result.stdout
+
+    def test_nf_core_fetchngs(self):
+        """nf-core/fetchngs SRA workflow renders via CLI."""
+        result = run_cli(
+            fixture_path("nf_core_fetchngs_sra.nf"),
+            "--title", "nf-core/fetchngs",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "gitGraph" in result.stdout
+        assert "SRA_IDS_TO_RUNINFO" in result.stdout
+
+    def test_nf_core_fastqc_module(self):
+        """nf-core FASTQC module renders via CLI."""
+        result = run_cli(fixture_path("nf_core_fastqc_module.nf"))
+        assert result.returncode == 0, result.stderr
+        assert "FASTQC" in result.stdout

@@ -1,5 +1,5 @@
 name: "nf-mapper"
-description: "Convert a Nextflow pipeline (.nf) into a Mermaid flowchart diagram"
+description: "Convert a Nextflow pipeline (.nf) into a Mermaid gitGraph diagram"
 author: "Skitionek"
 
 branding:
@@ -14,16 +14,12 @@ inputs:
     description: "Path where the Mermaid diagram will be written (default: diagram.md)"
     required: false
     default: "diagram.md"
-  direction:
-    description: "Mermaid flowchart direction: LR, TD, RL, or BT (default: LR)"
-    required: false
-    default: "LR"
   title:
     description: "Optional diagram title"
     required: false
     default: ""
   format:
-    description: "Output format: 'plain' or 'md' (fenced code block) (default: md)"
+    description: "Output format: 'plain' (raw Mermaid) or 'md' (fenced code block) (default: md)"
     required: false
     default: "md"
 
@@ -49,7 +45,7 @@ runs:
       shell: bash
       run: |
         OUTPUT="${{ inputs.output }}"
-        ARGS="${{ inputs.pipeline }} -o ${OUTPUT} --direction ${{ inputs.direction }} --format ${{ inputs.format }}"
+        ARGS="${{ inputs.pipeline }} -o ${OUTPUT} --format ${{ inputs.format }}"
         if [ -n "${{ inputs.title }}" ]; then
           ARGS="${ARGS} --title '${{ inputs.title }}'"
         fi

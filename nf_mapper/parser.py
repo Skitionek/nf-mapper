@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from typing import Iterator, MutableSequence, Optional, Sequence, Tuple, Union
+    from collections.abc import Iterator
 
 from groovy_parser.parser import parse_and_digest_groovy_content
 
@@ -94,7 +94,7 @@ class NfProcess:
 class NfWorkflow:
     """Represents a Nextflow workflow declaration."""
 
-    name: Optional[str]
+    name: str | None
     calls: list[str] = field(default_factory=list)
     """Names of processes/sub-workflows called in the main block."""
 
@@ -123,7 +123,7 @@ class ParsedPipeline:
 # ---------------------------------------------------------------------------
 
 
-def _get_leaf_value(node: dict) -> Optional[str]:
+def _get_leaf_value(node: dict) -> str | None:
     """Return the string value if *node* is a leaf node, otherwise None."""
     if node.get("leaf"):
         return node.get("value")
@@ -144,7 +144,7 @@ def _rule_ends_with(node: dict, suffix: list[str]) -> bool:
     return isinstance(rule, list) and rule[-len(suffix) :] == suffix
 
 
-def _get_first_identifier(node: dict) -> Optional[str]:
+def _get_first_identifier(node: dict) -> str | None:
     """Return the value of the first IDENTIFIER / CAPITALIZED_IDENTIFIER leaf."""
     for leaf_type, value in _iter_leaves(node):
         if leaf_type in ("IDENTIFIER", "CAPITALIZED_IDENTIFIER"):
@@ -227,7 +227,7 @@ def _extract_process_features(t_tree: dict) -> tuple[list[str], list[str], list[
 
 def _extract_process(node: dict) -> NfProcess:
     p_rule = node.get("rule")
-    process_name = "<error>"
+    process_name: str | None = None
     templates: list[str] = []
     containers: list[str] = []
     condas: list[str] = []
@@ -240,6 +240,11 @@ def _extract_process(node: dict) -> NfProcess:
             if len(p_c_children) > 1:
                 process_body = cast("dict", p_c_children[1])
                 containers, condas, templates = _extract_process_features(process_body)
+    if process_name is None:
+        raise ValueError(
+            f"Could not extract process name from AST node with rule={p_rule!r}. "
+            "The groovy-parser output may have an unexpected structure."
+        )
     return NfProcess(
         name=process_name,
         templates=templates,
@@ -285,7 +290,7 @@ def _find_process_out_refs(node: dict, known_processes: set[str]) -> Iterator[st
 # ---------------------------------------------------------------------------
 
 
-def _get_first_cap_identifier(node: dict) -> Optional[str]:
+def _get_first_cap_identifier(node: dict) -> str | None:
     """Return the first CAPITALIZED_IDENTIFIER in *node*'s direct children."""
     for child in node.get("children", []):
         for ltype, lval in _iter_leaves(child):
@@ -294,7 +299,7 @@ def _get_first_cap_identifier(node: dict) -> Optional[str]:
     return None
 
 
-def _is_process_call(cmd_node: dict, known_processes: set[str]) -> Optional[str]:
+def _is_process_call(cmd_node: dict, known_processes: set[str]) -> str | None:
     """
     Return the process name if *cmd_node* is a command_expression calling a known
     process, otherwise None.
@@ -332,7 +337,7 @@ def _extract_workflow_body(
     connections: list[tuple[str, str]] = []
     seen_calls: set[str] = set()
 
-    def _visit(node: dict, current_section: Optional[str] = None) -> None:
+    def _visit(node: dict, current_section: str | None = None) -> None:
         rule = node.get("rule")
 
         # Detect labeled sections (take:, main:, emit:)
@@ -375,10 +380,10 @@ def _extract_workflow_body(
 
 def _extract_workflow(node: dict, known_processes: set[str]) -> NfWorkflow:
     """Extract workflow name, calls, and connections from a workflow AST node."""
-    name: Optional[str] = None
+    name: str | None = None
     calls: list[str] = []
     connections: list[tuple[str, str]] = []
-    body_node: Optional[dict] = None
+    body_node: dict | None = None
 
     if node.get("rule") == W_RULE:
         # Named workflow: workflow NAME { ... }
@@ -436,7 +441,7 @@ def _extract_includes(include_cmd_children: list) -> list[NfInclude]:
 
 def _extract_features(
     t_tree: dict,
-    known_processes: Optional[set[str]] = None,
+    known_processes: set[str] | None = None,
 ) -> tuple[list[NfProcess], list[NfInclude], list[NfWorkflow], list[tuple[str, str]]]:
     processes: list[NfProcess] = []
     includes: list[NfInclude] = []
@@ -479,7 +484,7 @@ def _extract_features(
                         connections.extend(wf_conns)
                         unprocessed = False
                     elif sentinel == INCLUDE_CHILD:
-                        incs = _extract_includes(cast("dict", c_children[-1]))
+                        incs = _extract_includes(c_children)
                         includes.extend(incs)
                         # Treat imported names as known processes for connection detection
                         for inc in incs:
