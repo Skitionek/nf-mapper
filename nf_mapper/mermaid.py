@@ -54,7 +54,7 @@ def pipeline_to_mermaid(
     if title:
         lines += ["---", f"title: {title}", "---"]
 
-    lines.append("gitGraph")
+    lines.append("gitGraph LR:")
 
     if pipeline.connections:
         _render_dag(lines, pipeline)

@@ -53,7 +53,7 @@ class TestGitGraphStructure:
         assert lines[0] == "---"
         assert lines[1] == "title: My Pipeline"
         assert lines[2] == "---"
-        assert lines[3] == "gitGraph"
+        assert lines[3] == "gitGraph LR:"
 
     def test_no_title_no_front_matter(self):
         result = pipeline_to_mermaid(_make_pipeline())

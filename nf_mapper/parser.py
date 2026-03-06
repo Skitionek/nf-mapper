@@ -258,31 +258,154 @@ def _extract_process(node: dict) -> NfProcess:
 # ---------------------------------------------------------------------------
 
 
-def _find_process_out_refs(node: dict, known_processes: set[str]) -> Iterator[str]:
-    """Yield names of processes whose .out channel is referenced in *node*."""
+def _find_process_out_refs(
+    node: dict,
+    known_processes: set[str],
+    channel_var_map: dict[str, set[str]] | None = None,
+) -> Iterator[str]:
+    """Yield names of processes whose output is referenced in *node*.
+
+    Detects two patterns:
+
+    1. ``PROCESS.out.channel`` – a direct process-output path expression.
+    2. ``ch_var`` or ``ch_var.member`` – a channel variable whose provenance
+       (``ch_var → {PROCESS, ...}``) is recorded in *channel_var_map*.
+    """
     rule = node.get("rule")
-    if rule and rule[-1] == "path_expression":
+    if not isinstance(rule, list) or not rule:
+        for child in node.get("children", []):
+            yield from _find_process_out_refs(child, known_processes, channel_var_map)
+        return
+
+    last = rule[-1]
+
+    # Pattern 2a: simple identifier used as an argument → may be a channel var
+    if last == "identifier" and channel_var_map:
+        for ltype, lval in _iter_leaves(node):
+            if ltype == "IDENTIFIER" and lval in channel_var_map:
+                yield from channel_var_map[lval]
+                return
+            break  # Only check first leaf
+        for child in node.get("children", []):
+            yield from _find_process_out_refs(child, known_processes, channel_var_map)
+        return
+
+    if last == "path_expression":
         children = node.get("children", [])
-        if len(children) >= 2:
-            # First child: primary/identifier with CAPITALIZED_IDENTIFIER
+        if len(children) >= 1:
             first = children[0]
+
+            # Pattern 1: PROCESS.out...
             first_name = None
             if _rule_ends_with(first, IDENTIFIER_RULE):
                 for ltype, lval in _iter_leaves(first):
                     if ltype == "CAPITALIZED_IDENTIFIER":
                         first_name = lval
                         break
-            if first_name and first_name in known_processes:
-                # Second child must be path_element with 'out'
+            if first_name and first_name in known_processes and len(children) >= 2:
                 second = children[1]
                 if "rule" in second and second["rule"][-1] in ("path_element",):
                     for _, lval in _iter_leaves(second):
                         if lval == "out":
                             yield first_name
-                            break
-    # Recurse
+                            return  # Don't recurse further into this node
+
+            # Pattern 2b: ch_var.member (path_expression with identifier as primary)
+            if channel_var_map and _rule_ends_with(first, IDENTIFIER_RULE):
+                ch_var = None
+                for ltype, lval in _iter_leaves(first):
+                    if ltype == "IDENTIFIER":
+                        ch_var = lval
+                        break
+                if ch_var and ch_var in channel_var_map:
+                    yield from channel_var_map[ch_var]
+                    return  # Don't recurse – we've handled this node
+
+    # Recurse into children
     for child in node.get("children", []):
-        yield from _find_process_out_refs(child, known_processes)
+        yield from _find_process_out_refs(child, known_processes, channel_var_map)
+
+
+# ---------------------------------------------------------------------------
+# Channel variable tracking (.set { ch_var } assignments)
+# ---------------------------------------------------------------------------
+
+
+def _build_channel_var_map(
+    workflow_body: dict,
+    known_processes: set[str],
+) -> dict[str, set[str]]:
+    """Scan *workflow_body* for ``.set { ch_var }`` assignments.
+
+    Builds and returns a map from channel variable name to the set of source
+    process names.  Two passes are made so that one level of transitivity is
+    resolved automatically::
+
+        SRA_RUNINFO_TO_FTP.out.tsv.set { ch_meta }   # pass 1 → ch_meta = SRA_RUNINFO_TO_FTP
+        ch_meta.branch { … }.set { ch_branched }      # pass 2 → ch_branched = SRA_RUNINFO_TO_FTP
+    """
+    result: dict[str, set[str]] = {}
+
+    def _get_set_var(arg_node: dict) -> str | None:
+        """Return the single IDENTIFIER inside a ``.set { ch_var }`` closure."""
+        ids = [v for lt, v in _iter_leaves(arg_node) if lt == "IDENTIFIER"]
+        caps = [v for lt, v in _iter_leaves(arg_node) if lt == "CAPITALIZED_IDENTIFIER"]
+        # Only accept closures that resolve to exactly one lowercase identifier
+        if caps or len(ids) != 1:
+            return None
+        return ids[0]
+
+    def _sources_from_path(path_expr: dict) -> set[str]:
+        """Return source processes for a path expression (proc.out or ch_var)."""
+        children = path_expr.get("children", [])
+        if not children:
+            return set()
+        primary = children[0]
+        # Case 1: CAPITALIZED_IDENTIFIER with a .out element anywhere in chain
+        for ltype, lval in _iter_leaves(primary):
+            if ltype == "CAPITALIZED_IDENTIFIER" and lval in known_processes:
+                for pe in children[1:]:
+                    for lt2, lv2 in _iter_leaves(pe):
+                        if lt2 == "IDENTIFIER" and lv2 == "out":
+                            return {lval}
+                break
+        # Case 2: lowercase identifier whose provenance is already tracked
+        for ltype, lval in _iter_leaves(primary):
+            if ltype == "IDENTIFIER" and lval in result:
+                return set(result[lval])
+            break
+        return set()
+
+    def _scan(n: dict) -> None:
+        if not isinstance(n, dict):
+            return
+        if _rule_ends_with(n, ["command_expression"]):
+            children = n.get("children", [])
+            if len(children) >= 2:
+                first = children[0]
+                if _rule_ends_with(first, ["path_expression"]):
+                    # Check the last path_element is .set
+                    path_children = first.get("children", [])
+                    last_is_set = False
+                    for pe in reversed(path_children):
+                        if _rule_ends_with(pe, ["path_element"]):
+                            for lt, lv in _iter_leaves(pe):
+                                if lt == "IDENTIFIER" and lv == "set":
+                                    last_is_set = True
+                            break
+                    if last_is_set:
+                        sources = _sources_from_path(first)
+                        if sources:
+                            var_name = _get_set_var(children[-1])
+                            if var_name and var_name not in result:
+                                result[var_name] = sources
+                                return
+        for child in n.get("children", []):
+            _scan(child)
+
+    _scan(workflow_body)   # pass 1: PROCESS.out → ch_var
+    _scan(workflow_body)   # pass 2: ch_var → ch_var2 (one level of transitivity)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +426,9 @@ def _is_process_call(cmd_node: dict, known_processes: set[str]) -> str | None:
     """
     Return the process name if *cmd_node* is a command_expression calling a known
     process, otherwise None.
+
+    Only matches *bare* process calls (``PROCESS_NAME(args)``).  Method chains
+    such as ``PROCESS.out.channel.map{}.set{}`` are intentionally excluded.
     """
     if not _rule_ends_with(cmd_node, ["command_expression"]):
         return None
@@ -310,8 +436,10 @@ def _is_process_call(cmd_node: dict, known_processes: set[str]) -> str | None:
     if not children:
         return None
     first = children[0]
-    # The callee must be a path/primary/identifier with a CAPITALIZED_IDENTIFIER
-    if _rule_ends_with(first, IDENTIFIER_RULE) or _rule_ends_with(first, PRE_IDENTIFIER_NAME):
+    # The callee must be a bare primary/identifier (no additional path elements).
+    # PRE_IDENTIFIER_NAME matches are path-expression chains (e.g. PROC.out.method)
+    # and must NOT be treated as process calls.
+    if _rule_ends_with(first, IDENTIFIER_RULE):
         name = None
         for ltype, lval in _iter_leaves(first):
             if ltype == "CAPITALIZED_IDENTIFIER":
@@ -329,13 +457,17 @@ def _extract_workflow_body(
     """
     Traverse the workflow body AST to find:
     - Process calls (ordered list of called process names)
-    - Connections: (source, destination) tuples based on .out usage
+    - Connections: (source, destination) tuples based on .out usage and
+      channel variable assignments (.set { ch_var })
 
     Returns (calls, connections).
     """
     calls: list[str] = []
     connections: list[tuple[str, str]] = []
     seen_calls: set[str] = set()
+
+    # Build channel variable provenance map first (two-pass for transitivity)
+    channel_var_map = _build_channel_var_map(workflow_body, known_processes)
 
     def _visit(node: dict, current_section: str | None = None) -> None:
         rule = node.get("rule")
@@ -364,10 +496,10 @@ def _extract_workflow_body(
             if proc_name:
                 calls.append(proc_name)
                 seen_calls.add(proc_name)
-                # Find any process.out references in arguments
+                # Find any process.out references and channel var refs in arguments
                 children = node.get("children", [])
                 for arg_node in children[1:]:
-                    for src in _find_process_out_refs(arg_node, known_processes):
+                    for src in _find_process_out_refs(arg_node, known_processes, channel_var_map):
                         connections.append((src, proc_name))
                 return  # Don't recurse into the call itself
 
