@@ -13,11 +13,36 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nf_mapper.parser import ParsedPipeline
 
+#: Default Mermaid gitGraph configuration applied to every generated diagram.
+#: Pass *config* to :func:`pipeline_to_mermaid` to override individual keys.
+_DEFAULT_GRAPH_CONFIG: dict[str, object] = {
+    "showBranches": False,
+    "parallelCommits": True,
+}
+
+
+def _format_config(config: dict[str, object]) -> str:
+    """Serialize *config* as a JS-style object literal with single-quoted keys.
+
+    Booleans are rendered as ``true``/``false``, strings are single-quoted,
+    and all other values are coerced with :func:`str`.
+    """
+    pairs = []
+    for k, v in config.items():
+        if isinstance(v, bool):
+            val = "true" if v else "false"
+        elif isinstance(v, str):
+            val = f"'{v}'"
+        else:
+            val = str(v)
+        pairs.append(f"'{k}': {val}")
+    return "{" + ", ".join(pairs) + "}"
+
 
 def pipeline_to_mermaid(
     pipeline: ParsedPipeline,
     title: str | None = None,
-    show_branches: bool = False,
+    config: dict[str, object] | None = None,
 ) -> str:
     """Convert *pipeline* to a Mermaid ``gitGraph`` diagram string.
 
@@ -32,10 +57,12 @@ def pipeline_to_mermaid(
         :func:`~nf_mapper.parser.parse_nextflow_file`.
     title:
         Optional diagram title inserted as a YAML front-matter block.
-    show_branches:
-        When ``True`` the branch lanes are visible in the rendered diagram.
-        Defaults to ``False`` (branch lanes hidden via the Mermaid init
-        directive).
+    config:
+        Optional mapping of Mermaid `gitGraph` config keys to override.
+        Merged on top of :data:`_DEFAULT_GRAPH_CONFIG` (``showBranches: false``,
+        ``parallelCommits: true``).  Any key accepted by the Mermaid
+        ``%%{init}%%`` gitGraph directive may be supplied, e.g.
+        ``{"showBranches": True, "rotateCommitLabel": False}``.
 
     Returns
     -------
@@ -50,7 +77,7 @@ def pipeline_to_mermaid(
     ---
     title: My Pipeline
     ---
-    %%{init: {'gitGraph': {'showBranches': false}} }%%
+    %%{init: {'gitGraph': {'showBranches': false, 'parallelCommits': true}} }%%
     gitGraph LR:
        checkout main
        commit id: "PROCESS_A"
@@ -61,8 +88,8 @@ def pipeline_to_mermaid(
     if title:
         lines += ["---", f"title: {title}", "---"]
 
-    show_branches_val = str(show_branches).lower()
-    lines.append(f"%%{{init: {{'gitGraph': {{'showBranches': {show_branches_val}}}}} }}%%")
+    merged_config = {**_DEFAULT_GRAPH_CONFIG, **(config or {})}
+    lines.append(f"%%{{init: {{'gitGraph': {_format_config(merged_config)}}} }}%%")
     lines.append("gitGraph LR:")
     lines.append("   checkout main")
 

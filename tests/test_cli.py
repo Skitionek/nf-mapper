@@ -82,3 +82,119 @@ class TestCLI:
         result = run_cli(fixture_path("nf_core_fastqc_module.nf"))
         assert result.returncode == 0, result.stderr
         assert "FASTQC" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# --config flag
+# ---------------------------------------------------------------------------
+
+
+class TestConfigFlag:
+    def test_config_override_show_branches(self):
+        """--config can override showBranches."""
+        result = run_cli(
+            fixture_path("simple_workflow.nf"),
+            "--config", '{"showBranches": true}',
+        )
+        assert result.returncode == 0, result.stderr
+        assert "'showBranches': true" in result.stdout
+
+    def test_config_default_parallel_commits_present(self):
+        """parallelCommits default appears in output even without --config."""
+        result = run_cli(fixture_path("simple_workflow.nf"))
+        assert result.returncode == 0, result.stderr
+        assert "'parallelCommits': true" in result.stdout
+
+    def test_config_extra_key(self):
+        """--config can add keys not in the defaults."""
+        result = run_cli(
+            fixture_path("simple_workflow.nf"),
+            "--config", '{"rotateCommitLabel": false}',
+        )
+        assert result.returncode == 0, result.stderr
+        assert "'rotateCommitLabel': false" in result.stdout
+
+    def test_invalid_config_json_exits_nonzero(self):
+        """--config with invalid JSON exits with a non-zero return code."""
+        result = run_cli(fixture_path("simple_workflow.nf"), "--config", "not-json")
+        assert result.returncode != 0
+        assert "JSON" in result.stderr or "json" in result.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# --update / --marker flags
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateMarker:
+    def test_update_replaces_block_content(self, tmp_path):
+        """--update replaces the content between default markers."""
+        md = tmp_path / "README.md"
+        md.write_text(
+            "# Title\n\n"
+            "<!-- nf-mapper -->\nold content\n<!-- /nf-mapper -->\n\n"
+            "## Other\n"
+        )
+        result = run_cli(
+            fixture_path("simple_workflow.nf"),
+            "--update", str(md),
+            "--format", "md",
+        )
+        assert result.returncode == 0, result.stderr
+        content = md.read_text()
+        assert "FASTQC" in content
+        assert "```mermaid" in content
+        assert "old content" not in content
+        # Markers themselves must still be present
+        assert "<!-- nf-mapper -->" in content
+        assert "<!-- /nf-mapper -->" in content
+
+    def test_update_custom_marker(self, tmp_path):
+        """--update --marker targets a named block."""
+        md = tmp_path / "README.md"
+        md.write_text(
+            "<!-- main-pipeline -->\nold\n<!-- /main-pipeline -->\n"
+        )
+        result = run_cli(
+            fixture_path("simple_workflow.nf"),
+            "--update", str(md),
+            "--marker", "main-pipeline",
+        )
+        assert result.returncode == 0, result.stderr
+        content = md.read_text()
+        assert "old" not in content
+        assert "FASTQC" in content
+
+    def test_update_multiple_blocks_independent(self, tmp_path):
+        """Each named block is updated independently."""
+        md = tmp_path / "README.md"
+        md.write_text(
+            "<!-- pipeline-a -->\nblock-a-old\n<!-- /pipeline-a -->\n\n"
+            "<!-- pipeline-b -->\nblock-b-old\n<!-- /pipeline-b -->\n"
+        )
+        # Update only pipeline-a
+        run_cli(
+            fixture_path("simple_workflow.nf"),
+            "--update", str(md),
+            "--marker", "pipeline-a",
+        )
+        content = md.read_text()
+        assert "block-a-old" not in content   # updated
+        assert "block-b-old" in content       # untouched
+
+    def test_update_missing_markers_exits_nonzero(self, tmp_path):
+        """--update exits non-zero when the markers are absent."""
+        md = tmp_path / "README.md"
+        md.write_text("# No markers here\n")
+        result = run_cli(fixture_path("simple_workflow.nf"), "--update", str(md))
+        assert result.returncode != 0
+        assert "nf-mapper" in result.stderr  # helpful error mentions marker name
+
+    def test_update_and_output_are_mutually_exclusive(self, tmp_path):
+        """--update and -o cannot be used together."""
+        result = run_cli(
+            fixture_path("simple_workflow.nf"),
+            "--update", str(tmp_path / "README.md"),
+            "-o", str(tmp_path / "out.md"),
+        )
+        assert result.returncode != 0
