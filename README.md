@@ -88,7 +88,9 @@ workflow {
 ---
 title: nf-core/rnaseq QC
 ---
-gitGraph
+%%{init: {'gitGraph': {'showBranches': false}} }%%
+gitGraph LR:
+   checkout main
    commit id: "FASTQC"
    commit id: "MULTIQC"
 ```
@@ -118,7 +120,9 @@ workflow RNASEQ {
 ---
 title: RNA-seq Pipeline
 ---
-gitGraph
+%%{init: {'gitGraph': {'showBranches': false}} }%%
+gitGraph LR:
+   checkout main
    branch branch_1
    checkout branch_1
    commit id: "FASTQC"
@@ -139,7 +143,9 @@ nf-mapper workflows/sra/main.nf --title "nf-core/fetchngs SRA"
 ---
 title: nf-core/fetchngs SRA
 ---
-gitGraph
+%%{init: {'gitGraph': {'showBranches': false}} }%%
+gitGraph LR:
+   checkout main
    branch branch_1
    checkout branch_1
    commit id: "ASPERA_CLI"

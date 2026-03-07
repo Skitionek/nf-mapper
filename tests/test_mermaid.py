@@ -43,7 +43,10 @@ class TestGitGraphStructure:
 
     def test_starts_with_gitgraph(self):
         result = pipeline_to_mermaid(_make_pipeline())
-        assert result.startswith("gitGraph")
+        lines = result.splitlines()
+        assert lines[0] == "%%{init: {'gitGraph': {'showBranches': false}} }%%"
+        assert lines[1] == "gitGraph LR:"
+        assert lines[2] == "   checkout main"
 
     def test_title_adds_front_matter(self):
         result = pipeline_to_mermaid(_make_pipeline(), title="My Pipeline")
@@ -53,7 +56,9 @@ class TestGitGraphStructure:
         assert lines[0] == "---"
         assert lines[1] == "title: My Pipeline"
         assert lines[2] == "---"
-        assert lines[3] == "gitGraph LR:"
+        assert lines[3] == "%%{init: {'gitGraph': {'showBranches': false}} }%%"
+        assert lines[4] == "gitGraph LR:"
+        assert lines[5] == "   checkout main"
 
     def test_no_title_no_front_matter(self):
         result = pipeline_to_mermaid(_make_pipeline())
@@ -216,7 +221,7 @@ class TestNfCoreEndToEnd:
         """nf-core/fetchngs SRA workflow renders as a valid gitGraph."""
         pipeline = parse_nextflow_file(fixture_path("nf_core_fetchngs_sra.nf"))
         result = pipeline_to_mermaid(pipeline, title="nf-core/fetchngs")
-        assert result.startswith("---\ntitle: nf-core/fetchngs\n---\ngitGraph")
+        assert result.startswith("---\ntitle: nf-core/fetchngs\n---\n%%{init: {'gitGraph': {'showBranches': false}} }%%\ngitGraph")
         assert 'commit id: "SRA_IDS_TO_RUNINFO"' in result
         assert 'commit id: "SRA_RUNINFO_TO_FTP"' in result
         # Parallel tools (Aspera, sra-tools, FTP) show as branches

@@ -45,7 +45,9 @@ def pipeline_to_mermaid(
     ---
     title: My Pipeline
     ---
-    gitGraph
+    %%{init: {'gitGraph': {'showBranches': false}} }%%
+    gitGraph LR:
+       checkout main
        commit id: "PROCESS_A"
        commit id: "PROCESS_B"
     """
@@ -54,7 +56,9 @@ def pipeline_to_mermaid(
     if title:
         lines += ["---", f"title: {title}", "---"]
 
+    lines.append("%%{init: {'gitGraph': {'showBranches': false}} }%%")
     lines.append("gitGraph LR:")
+    lines.append("   checkout main")
 
     if pipeline.connections:
         _render_dag(lines, pipeline)
