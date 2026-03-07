@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 def pipeline_to_mermaid(
     pipeline: ParsedPipeline,
     title: str | None = None,
+    show_branches: bool = False,
 ) -> str:
     """Convert *pipeline* to a Mermaid ``gitGraph`` diagram string.
 
@@ -31,6 +32,10 @@ def pipeline_to_mermaid(
         :func:`~nf_mapper.parser.parse_nextflow_file`.
     title:
         Optional diagram title inserted as a YAML front-matter block.
+    show_branches:
+        When ``True`` the branch lanes are visible in the rendered diagram.
+        Defaults to ``False`` (branch lanes hidden via the Mermaid init
+        directive).
 
     Returns
     -------
@@ -56,7 +61,8 @@ def pipeline_to_mermaid(
     if title:
         lines += ["---", f"title: {title}", "---"]
 
-    lines.append("%%{init: {'gitGraph': {'showBranches': false}} }%%")
+    show_branches_val = str(show_branches).lower()
+    lines.append(f"%%{{init: {{'gitGraph': {{'showBranches': {show_branches_val}}}}} }}%%")
     lines.append("gitGraph LR:")
     lines.append("   checkout main")
 
@@ -152,15 +158,13 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
         branch_counter[0] += 1
         return f"branch_{branch_counter[0]}"
 
-    # 1. Off-main source nodes (no main-path predecessor) → branch before main
-    for node in branch_hang.get(None, []):
-        bname = next_branch()
-        lines.append(f"   branch {bname}")
-        lines.append(f"   checkout {bname}")
-        _emit_off_chain(lines, node, main_set, successors)
-        lines.append("   checkout main")
+    # Ensure main is described before any branch: attach source-only nodes
+    # (those with no predecessor on main) to the first main-path node so that
+    # main always has at least one commit before branching begins.
+    if main_path and None in branch_hang:
+        branch_hang[main_path[0]].extend(branch_hang.pop(None))
 
-    # 2. Main path commits, with branches hanging off each node
+    # Emit main path commits, with branches hanging off each node
     for node in main_path:
         lines.append(f'   commit id: "{node}"')
 
