@@ -21,8 +21,18 @@ and parallel or QC branches diverge just like in a real git history.
   [nf-core/rnaseq](https://github.com/nf-core/rnaseq) modules)
 - Extracts **processes**, **workflows**, **includes** and infers
   **process connections** from `.out` channel references
+- Parses **`input:`/`output:`** sections to extract `path(...)` channel
+  patterns (e.g. `"*.bam"`, `"*.html"`)
 - Outputs valid [Mermaid `gitGraph`](https://mermaid.js.org/syntax/gitgraph.html)
   diagrams – paste directly into GitHub Markdown, Notion, Confluence, etc.
+- **Channel nodes**: each output path pattern rendered as a `HIGHLIGHT` commit
+  tagged with the file extension (e.g. `tag: "bam"`)
+- **Cherry-pick**: when a branch process consumes a channel committed on a
+  different branch, a `cherry-pick` commit shows the data flow explicitly
+- **Workflow-call branches**: independent workflow calls in a flat pipeline are
+  each placed on their own branch instead of a linear sequence
+- Fixed **branch-merge logic**: branches no longer duplicate fast-forwarded
+  nodes; multiple branches off the same node are all handled correctly
 - Available as a **Python package**, a **CLI tool** and a **GitHub Action**
 
 ---
@@ -310,7 +320,7 @@ can be supplied.
 
 | Class | Fields |
 |---|---|
-| `NfProcess` | `name`, `containers`, `condas`, `templates` |
+| `NfProcess` | `name`, `containers`, `condas`, `templates`, `inputs`, `outputs` |
 | `NfWorkflow` | `name`, `calls` |
 | `NfInclude` | `path`, `imports` |
 | `ParsedPipeline` | `processes`, `workflows`, `includes`, `connections` |
@@ -423,6 +433,8 @@ Then update each block independently:
 
 2. **Extract** – The resulting AST is traversed to find:
    - `process` declarations (with `container` / `conda` directives)
+   - `input:` and `output:` sections – string-literal `path(...)` patterns
+     (e.g. `"*.bam"`, `"*.html"`) are extracted as channel metadata
    - `workflow` blocks (named and entry workflows, with `take:`/`main:`/`emit:` sections)
    - `include` statements (including imported process names)
    - **Process connections** inferred from `.out` channel references inside
@@ -430,8 +442,15 @@ Then update each block independently:
 
 3. **Render** – The connection graph is laid out as a `gitGraph`:
    - The **longest path** through the DAG becomes the `main` branch
-   - Parallel paths (e.g. QC steps) become named branches
-   - Convergence points become `merge` commits
+   - Parallel paths (e.g. QC steps) become named branches; multiple off-nodes
+     from the same main-path node each get their own branch
+   - Convergence points become `merge` commits (duplicate-free, bug-fixed)
+   - Each process's output `path(...)` patterns become `type: HIGHLIGHT`
+     commits tagged with the file extension
+   - When a branch process uses a channel committed on a different branch,
+     a `cherry-pick` commit makes the data-flow direction explicit
+   - In flat mode (no channel connections), each independent workflow call
+     is placed on its own branch
 
 ---
 

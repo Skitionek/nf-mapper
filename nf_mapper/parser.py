@@ -40,6 +40,7 @@ WORKFLOW_CHILD = {"leaf": "IDENTIFIER", "value": "workflow"}
 CONTAINER_CHILD = {"leaf": "IDENTIFIER", "value": "container"}
 CONDA_CHILD = {"leaf": "IDENTIFIER", "value": "conda"}
 TEMPLATE_CHILD = {"leaf": "IDENTIFIER", "value": "template"}
+PATH_CHILD = {"leaf": "IDENTIFIER", "value": "path"}
 
 P_RULE = [
     "argument_list",
@@ -88,6 +89,10 @@ class NfProcess:
     containers: list[str] = field(default_factory=list)
     condas: list[str] = field(default_factory=list)
     templates: list[str] = field(default_factory=list)
+    inputs: list[str] = field(default_factory=list)
+    """String-literal ``path(...)`` patterns from the ``input:`` section (e.g. ``"*.fastq.gz"``)."""
+    outputs: list[str] = field(default_factory=list)
+    """String-literal ``path(...)`` patterns from the ``output:`` section (e.g. ``"*.bam"``)."""
 
 
 @dataclass
@@ -179,6 +184,125 @@ def _extract_condas(node: dict) -> Iterator[str]:
         yield from sp.split(conda_str)
 
 
+def _extract_path_channels(node: dict) -> Iterator[str]:
+    """Yield string-literal arguments of ``path(...)`` calls anywhere in *node*'s subtree.
+
+    Handles two AST representations:
+
+    1. **Standalone command expression** – ``path "*.bam"`` or ``path("*.bam")``
+       when ``path`` is the top-level callee of a command expression.
+    2. **Path expression** – ``path("*.bam")`` when nested as an argument inside
+       another call (e.g. ``tuple val(meta), path("*.bam")``).  The groovy
+       parser renders this as a ``path_expression`` whose first child is the
+       ``path`` identifier and whose subsequent children are ``arguments``
+       path elements.
+
+    Only string literals (e.g. ``"*.bam"``, ``"*.html"``) are yielded; bare
+    variable references like ``path(reads)`` produce no output.
+    """
+    if not isinstance(node, dict):
+        return
+    # ---- Case 1: standalone command expression --------------------------------
+    if _rule_ends_with(node, ["command_expression"]):
+        children = node.get("children", [])
+        if children:
+            first = cast("dict", children[0])
+            # Unwrap potential expression/path_expression wrapper
+            if _rule_ends_with(first, PRE_IDENTIFIER_NAME):
+                first = cast("dict", first.get("children", [{}])[0])
+            if _rule_ends_with(first, IDENTIFIER_RULE):
+                c0_children = first.get("children", [])
+                if c0_children and c0_children[0] == PATH_CHILD:
+                    for arg in children[1:]:
+                        yield from _extract_strings(arg)
+                    return  # don't recurse into path() args
+    # ---- Case 2: nested path_expression (inside tuple args etc.) -------------
+    if _rule_ends_with(node, ["path_expression"]):
+        children = node.get("children", [])
+        if len(children) >= 2:
+            primary = children[0]
+            if _rule_ends_with(primary, IDENTIFIER_RULE):
+                c0 = primary.get("children", [])
+                if c0 and c0[0] == PATH_CHILD:
+                    for path_elem in children[1:]:
+                        if _rule_ends_with(path_elem, ["arguments"]):
+                            yield from _extract_strings(path_elem)
+                    return
+    # ---- Recurse ------------------------------------------------------------
+    for child in node.get("children", []):
+        yield from _extract_path_channels(child)
+
+
+def _extract_process_channels(body: dict) -> tuple[list[str], list[str]]:
+    """Return ``(input_patterns, output_patterns)`` from a process body node.
+
+    Scans ``input:`` and ``output:`` labeled sections and their **unlabeled
+    sibling statements** (Groovy's labeled-statement syntax attaches a label
+    only to the *first* following statement; subsequent declarations in the
+    same section become plain siblings in the AST).  Other sections
+    (``script:``, ``shell:``, ``exec:``, ``when:``, ``stub:``) are skipped
+    to avoid false positives from shell code.
+    """
+    inputs: list[str] = []
+    outputs: list[str] = []
+    _SKIP_SECTIONS = {"script", "shell", "exec", "when", "stub"}
+
+    def _is_labeled_stmt(node: dict) -> bool:
+        """True iff *node* is a labeled statement (not a plain expression-statement)."""
+        rule = node.get("rule", [])
+        # rule[-1] == "statement" but NOT preceded by "statement_expression"
+        return bool(
+            rule
+            and rule[-1] == "statement"
+            and rule[-2:-1] != ["statement_expression"]
+        )
+
+    def _collect_siblings(children: list, current_section: str | None) -> None:
+        """Walk a flat sibling list, collecting ``path(...)`` patterns."""
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            if _is_labeled_stmt(child):
+                c = child.get("children", [])
+                label_n = c[0] if c else None
+                colon = c[1] if len(c) > 1 else None
+                body_n = c[2] if len(c) > 2 else None
+                if (
+                    colon is not None
+                    and colon.get("leaf") == "COLON"
+                    and label_n is not None
+                    and _rule_ends_with(label_n, ["identifier"])
+                ):
+                    section = _get_first_identifier(label_n)
+                    current_section = section
+                    if section in ("input", "output") and body_n is not None:
+                        target = inputs if section == "input" else outputs
+                        target.extend(_extract_path_channels(body_n))
+                    elif section in _SKIP_SECTIONS:
+                        current_section = None
+            else:
+                # Unlabeled sibling – collect if inside an active section
+                if current_section in ("input", "output"):
+                    target = inputs if current_section == "input" else outputs
+                    target.extend(_extract_path_channels(child))
+
+    def _visit(node: dict) -> None:
+        if not isinstance(node, dict):
+            return
+        children = node.get("children", [])
+        if not children:
+            return
+        # If any direct child is a labeled statement this is the right level
+        if any(_is_labeled_stmt(c) for c in children if isinstance(c, dict)):
+            _collect_siblings(children, None)
+            return  # don't recurse – this level handles everything
+        for child in children:
+            _visit(child)
+
+    _visit(body)
+    return inputs, outputs
+
+
 # ---------------------------------------------------------------------------
 # Process body parsing (containers / condas / templates)
 # ---------------------------------------------------------------------------
@@ -231,6 +355,8 @@ def _extract_process(node: dict) -> NfProcess:
     templates: list[str] = []
     containers: list[str] = []
     condas: list[str] = []
+    inputs: list[str] = []
+    outputs: list[str] = []
     if p_rule == P_RULE:
         p_c_children = node.get("children", [])
         if p_c_children and "children" in p_c_children[0]:
@@ -240,6 +366,7 @@ def _extract_process(node: dict) -> NfProcess:
             if len(p_c_children) > 1:
                 process_body = cast("dict", p_c_children[1])
                 containers, condas, templates = _extract_process_features(process_body)
+                inputs, outputs = _extract_process_channels(process_body)
     if process_name is None:
         raise ValueError(
             f"Could not extract process name from AST node with rule={p_rule!r}. "
@@ -250,6 +377,8 @@ def _extract_process(node: dict) -> NfProcess:
         templates=templates,
         containers=containers,
         condas=condas,
+        inputs=inputs,
+        outputs=outputs,
     )
 
 

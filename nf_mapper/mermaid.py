@@ -3,6 +3,28 @@
 The generated diagram uses the ``gitGraph`` syntax to render the pipeline as
 a metro-map: each process is a commit, linear chains stay on the same branch,
 and parallel paths branch off and optionally merge back.
+
+Channel nodes
+-------------
+Each process's ``output:`` path patterns are rendered as ``type: HIGHLIGHT``
+commits immediately after the process commit, with the file extension as a
+``tag``.  For example, a process that outputs ``*.bam`` yields::
+
+    commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "bam"
+
+Cherry-pick
+-----------
+When a branch process receives input from a process whose output channel was
+committed on a *different* branch, a ``cherry-pick`` is emitted before the
+branch process commit to show the data flow explicitly::
+
+    cherry-pick id: "ALIGN: *.bam"
+
+Workflow-call branches
+----------------------
+When there are no explicit channel connections (flat rendering), each workflow
+call beyond the first is placed on its own branch so that independent calls
+appear as parallel lines rather than a linear sequence.
 """
 
 from __future__ import annotations
@@ -11,7 +33,7 @@ from collections import defaultdict, deque
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nf_mapper.parser import ParsedPipeline
+    from nf_mapper.parser import NfProcess, ParsedPipeline
 
 #: Default Mermaid gitGraph configuration applied to every generated diagram.
 #: Pass *config* to :func:`pipeline_to_mermaid` to override individual keys.
@@ -37,6 +59,83 @@ def _format_config(config: dict[str, object]) -> str:
             val = str(v)
         pairs.append(f"'{k}': {val}")
     return "{" + ", ".join(pairs) + "}"
+
+
+# ---------------------------------------------------------------------------
+# Channel helpers
+# ---------------------------------------------------------------------------
+
+
+def _file_extension(pattern: str) -> str | None:
+    """Return the file extension from a glob/file pattern, or *None*.
+
+    Examples::
+
+        _file_extension("*.html")        → "html"
+        _file_extension("*.sorted.bam")  → "bam"
+        _file_extension("report.html")   → "html"
+        _file_extension("prefix_*")      → None
+    """
+    p = pattern.strip("'\"")
+    if "." in p:
+        ext = p.rsplit(".", 1)[-1]
+        return ext if ext else None
+    return None
+
+
+def _channel_ids_with_ext(
+    proc_name: str,
+    proc_lookup: dict[str, NfProcess],
+) -> list[tuple[str, str | None]]:
+    """Return ``(channel_commit_id, extension_or_None)`` for every output of *proc_name*.
+
+    Returns an empty list when the process is not in *proc_lookup* (e.g. it is
+    an imported/included process whose definition is in another file).
+    """
+    proc = proc_lookup.get(proc_name)
+    if proc is None:
+        return []
+    result: list[tuple[str, str | None]] = []
+    for pattern in getattr(proc, "outputs", []):
+        cid = f"{proc_name}: {pattern}"
+        result.append((cid, _file_extension(pattern)))
+    return result
+
+
+def _emit_node_with_channels(
+    lines: list[str],
+    proc_name: str,
+    proc_lookup: dict[str, NfProcess],
+    predecessors: dict[str, list[str]],
+    channel_branch: dict[str, str],
+    current_branch: str,
+) -> None:
+    """Emit a process commit, optional cherry-picks, and output channel nodes.
+
+    Steps:
+
+    1. For every predecessor whose output channel was committed on a *different*
+       branch, emit ``cherry-pick id: "PRED: *.ext"`` to make the data flow
+       explicit on the current branch.
+    2. Emit ``commit id: "PROC_NAME"``.
+    3. For every ``path(...)`` output pattern, emit
+       ``commit id: "PROC: *.ext" type: HIGHLIGHT tag: "ext"`` and record the
+       channel in *channel_branch*.
+    """
+    # 1. Cherry-pick predecessor channels that live on a different branch
+    for src in predecessors.get(proc_name, []):
+        for cid, _ext in _channel_ids_with_ext(src, proc_lookup):
+            if cid in channel_branch and channel_branch[cid] != current_branch:
+                lines.append(f'   cherry-pick id: "{cid}"')
+
+    # 2. Process commit
+    lines.append(f'   commit id: "{proc_name}"')
+
+    # 3. Output channel HIGHLIGHT commits
+    for cid, ext in _channel_ids_with_ext(proc_name, proc_lookup):
+        tag = f' tag: "{ext}"' if ext else ""
+        lines.append(f'   commit id: "{cid}" type: HIGHLIGHT{tag}')
+        channel_branch[cid] = current_branch
 
 
 def pipeline_to_mermaid(
@@ -107,7 +206,13 @@ def pipeline_to_mermaid(
 
 
 def _render_flat(lines: list[str], pipeline: ParsedPipeline) -> None:
-    """Emit commits in workflow-call order (or declaration order as fallback)."""
+    """Emit commits in workflow-call order (or declaration order as fallback).
+
+    With a single call the process stays on ``main``.  With multiple calls the
+    first stays on ``main`` and every subsequent call gets its own branch, so
+    independent workflow calls appear as parallel lines rather than a linear
+    sequence.
+    """
     ordered: list[str] = []
     seen: set[str] = set()
 
@@ -128,8 +233,34 @@ def _render_flat(lines: list[str], pipeline: ParsedPipeline) -> None:
             ordered.append(proc.name)
             seen.add(proc.name)
 
-    for name in ordered:
-        lines.append(f'   commit id: "{name}"')
+    proc_lookup: dict[str, NfProcess] = {p.name: p for p in pipeline.processes}
+
+    if len(ordered) <= 1:
+        # Single call: stays on main
+        for name in ordered:
+            lines.append(f'   commit id: "{name}"')
+            for cid, ext in _channel_ids_with_ext(name, proc_lookup):
+                tag = f' tag: "{ext}"' if ext else ""
+                lines.append(f'   commit id: "{cid}" type: HIGHLIGHT{tag}')
+    else:
+        # Multiple calls: first on main, each subsequent call on its own branch
+        branch_counter = [0]
+        first = ordered[0]
+        lines.append(f'   commit id: "{first}"')
+        for cid, ext in _channel_ids_with_ext(first, proc_lookup):
+            tag = f' tag: "{ext}"' if ext else ""
+            lines.append(f'   commit id: "{cid}" type: HIGHLIGHT{tag}')
+
+        for name in ordered[1:]:
+            branch_counter[0] += 1
+            bname = f"branch_{branch_counter[0]}"
+            lines.append(f"   branch {bname}")
+            lines.append(f"   checkout {bname}")
+            lines.append(f'   commit id: "{name}"')
+            for cid, ext in _channel_ids_with_ext(name, proc_lookup):
+                tag = f' tag: "{ext}"' if ext else ""
+                lines.append(f'   commit id: "{cid}" type: HIGHLIGHT{tag}')
+            lines.append("   checkout main")
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +269,19 @@ def _render_flat(lines: list[str], pipeline: ParsedPipeline) -> None:
 
 
 def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
-    """Render the pipeline DAG as a gitGraph with branches for parallel paths."""
+    """Render the pipeline DAG as a gitGraph with branches for parallel paths.
+
+    Fixes vs. original:
+
+    * Uses an ``emitted`` set to track committed nodes instead of mutating
+      *main_path* with ``remove()``, which caused skipped nodes during
+      iteration.
+    * Removed the ``break`` after a merge so that multiple off-nodes hanging
+      off the same main-path node all get their own branches.
+    * Output channel HIGHLIGHT commits are emitted after every process commit.
+    * Cherry-pick commits are emitted before a branch-process commit when its
+      input channel was originally committed on a different branch.
+    """
     # Build adjacency structures
     successors: dict[str, list[str]] = defaultdict(list)
     predecessors: dict[str, list[str]] = defaultdict(list)
@@ -155,6 +298,11 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
 
     if not nodes:
         return
+
+    # Process lookup for channel node emission
+    proc_lookup: dict[str, NfProcess] = {p.name: p for p in pipeline.processes}
+    # Tracks which branch each channel commit was emitted on
+    channel_branch: dict[str, str] = {}
 
     # Stable topological order (sources first, alphabetical for ties)
     topo = _topo_sort(nodes, predecessors, successors)
@@ -191,31 +339,56 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
     if main_path and None in branch_hang:
         branch_hang[main_path[0]].extend(branch_hang.pop(None))
 
-    # Emit main path commits, with branches hanging off each node
+    # emitted tracks process names whose commit has already been written
+    emitted: set[str] = set()
+    current_branch = "main"
+
     for node in main_path:
-        lines.append(f'   commit id: "{node}"')
+        if node in emitted:
+            continue
+
+        _emit_node_with_channels(
+            lines, node, proc_lookup, predecessors, channel_branch, current_branch
+        )
+        emitted.add(node)
 
         for off_node in branch_hang.get(node, []):
             bname = next_branch()
             lines.append(f"   branch {bname}")
             lines.append(f"   checkout {bname}")
-            _emit_off_chain(lines, off_node, main_set, successors)
+            current_branch = bname
+
+            _emit_off_chain_with_channels(
+                lines, off_node, main_set, successors,
+                predecessors, proc_lookup, channel_branch, current_branch,
+            )
+
             # Merge back if the off-chain leads to a main-path node
             merge_target = _find_merge_target(off_node, successors, main_set)
             if merge_target:
-                idx = main_path.index(merge_target)
+                node_idx = main_path.index(node)
+                merge_idx = main_path.index(merge_target)
                 lines.append("   checkout main")
-                # fast-forward to merge point then merge
-                for step in main_path[main_path.index(node) + 1 : idx]:
-                    lines.append(f'   commit id: "{step}"')
+                current_branch = "main"
+                # Fast-forward: emit intermediate main-path nodes not yet committed
+                for step in main_path[node_idx + 1 : merge_idx]:
+                    if step not in emitted:
+                        _emit_node_with_channels(
+                            lines, step, proc_lookup, predecessors,
+                            channel_branch, current_branch,
+                        )
+                        emitted.add(step)
                 lines.append(f"   merge {bname}")
-                # mark those nodes as already emitted
-                for step in main_path[main_path.index(node) + 1 : idx + 1]:
-                    main_set.discard(step)
-                    main_path.remove(step)
-                break
+                # The merge commit represents merge_target; mark it emitted
+                # and emit its output channels on main.
+                emitted.add(merge_target)
+                for cid, ext in _channel_ids_with_ext(merge_target, proc_lookup):
+                    tag = f' tag: "{ext}"' if ext else ""
+                    lines.append(f'   commit id: "{cid}" type: HIGHLIGHT{tag}')
+                    channel_branch[cid] = current_branch
             else:
                 lines.append("   checkout main")
+                current_branch = "main"
 
 
 # ---------------------------------------------------------------------------
@@ -281,16 +454,27 @@ def _latest_main_pred(
     return max(candidates, key=main_path.index)
 
 
-def _emit_off_chain(
+def _emit_off_chain_with_channels(
     lines: list[str],
     start: str,
     main_set: set[str],
     successors: dict[str, list[str]],
+    predecessors: dict[str, list[str]],
+    proc_lookup: dict[str, NfProcess],
+    channel_branch: dict[str, str],
+    current_branch: str,
 ) -> None:
-    """Emit commits for a chain beginning at *start*, stopping at main-path nodes."""
+    """Emit commits for an off-main chain beginning at *start*.
+
+    Stops at main-path nodes.  For each node, cherry-picks any predecessor
+    output channels that were committed on a different branch, then emits the
+    process commit and its own output channels.
+    """
     cur: str | None = start
     while cur is not None:
-        lines.append(f'   commit id: "{cur}"')
+        _emit_node_with_channels(
+            lines, cur, proc_lookup, predecessors, channel_branch, current_branch
+        )
         off_succs = [s for s in successors[cur] if s not in main_set]
         cur = off_succs[0] if off_succs else None
 
