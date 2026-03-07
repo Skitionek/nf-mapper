@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import os
 
-from nf_mapper.mermaid import pipeline_to_mermaid
+from nf_mapper.mermaid import _DEFAULT_GRAPH_CONFIG, pipeline_to_mermaid
 from nf_mapper.parser import NfProcess, NfWorkflow, ParsedPipeline, parse_nextflow_file
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+
+_DEFAULT_INIT = (
+    "%%{init: {'gitGraph': {'showBranches': false, 'parallelCommits': true}} }%%"
+)
 
 
 def fixture_path(name: str) -> str:
@@ -41,9 +45,12 @@ class TestGitGraphStructure:
     def test_returns_string(self):
         assert isinstance(pipeline_to_mermaid(_make_pipeline()), str)
 
-    def test_starts_with_gitgraph(self):
+    def test_starts_with_init_then_gitgraph(self):
         result = pipeline_to_mermaid(_make_pipeline())
-        assert result.startswith("gitGraph")
+        lines = result.splitlines()
+        assert lines[0] == _DEFAULT_INIT
+        assert lines[1] == "gitGraph LR:"
+        assert lines[2] == "   checkout main"
 
     def test_title_adds_front_matter(self):
         result = pipeline_to_mermaid(_make_pipeline(), title="My Pipeline")
@@ -53,7 +60,9 @@ class TestGitGraphStructure:
         assert lines[0] == "---"
         assert lines[1] == "title: My Pipeline"
         assert lines[2] == "---"
-        assert lines[3] == "gitGraph LR:"
+        assert lines[3] == _DEFAULT_INIT
+        assert lines[4] == "gitGraph LR:"
+        assert lines[5] == "   checkout main"
 
     def test_no_title_no_front_matter(self):
         result = pipeline_to_mermaid(_make_pipeline())
@@ -67,6 +76,53 @@ class TestGitGraphStructure:
         ))
         assert "flowchart" not in result
         assert "-->" not in result
+
+
+# ---------------------------------------------------------------------------
+# gitGraph config
+# ---------------------------------------------------------------------------
+
+
+class TestConfig:
+    def test_default_config_keys(self):
+        """Default config contains showBranches and parallelCommits."""
+        assert "showBranches" in _DEFAULT_GRAPH_CONFIG
+        assert "parallelCommits" in _DEFAULT_GRAPH_CONFIG
+
+    def test_default_showbranches_false(self):
+        result = pipeline_to_mermaid(_make_pipeline())
+        assert "'showBranches': false" in result
+
+    def test_default_parallelcommits_true(self):
+        result = pipeline_to_mermaid(_make_pipeline())
+        assert "'parallelCommits': true" in result
+
+    def test_override_single_key(self):
+        """A single key in config overrides its default; others stay."""
+        result = pipeline_to_mermaid(_make_pipeline(), config={"showBranches": True})
+        assert "'showBranches': true" in result
+        assert "'parallelCommits': true" in result  # default preserved
+
+    def test_override_multiple_keys(self):
+        result = pipeline_to_mermaid(
+            _make_pipeline(),
+            config={"showBranches": True, "parallelCommits": False},
+        )
+        assert "'showBranches': true" in result
+        assert "'parallelCommits': false" in result
+
+    def test_extra_key_included(self):
+        """Keys not in defaults are added to the init directive."""
+        result = pipeline_to_mermaid(
+            _make_pipeline(), config={"rotateCommitLabel": False}
+        )
+        assert "'rotateCommitLabel': false" in result
+        assert "'showBranches': false" in result  # defaults still present
+
+    def test_empty_config_uses_defaults(self):
+        result_none = pipeline_to_mermaid(_make_pipeline(), config=None)
+        result_empty = pipeline_to_mermaid(_make_pipeline(), config={})
+        assert result_none == result_empty
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +225,18 @@ class TestBranching:
         idx_c = result.index('"C"')
         assert idx_a < idx_b < idx_c
 
+    def test_main_commit_precedes_branches(self):
+        """main must have at least one commit before any branch is created."""
+        # Main: A → B; QC is a source node with no main-path predecessor
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="A"), NfProcess(name="B"), NfProcess(name="QC")],
+            connections=[("A", "B")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        idx_first_commit = result.index("commit id:")
+        idx_first_branch = result.index("branch ")
+        assert idx_first_commit < idx_first_branch
+
 
 # ---------------------------------------------------------------------------
 # End-to-end – handcrafted fixtures
@@ -197,6 +265,8 @@ class TestHandcraftedEndToEnd:
         # FASTQC is a parallel branch (no output connections)
         assert "FASTQC" in result
         assert "branch" in result  # FASTQC goes on a branch
+        # Main (TRIMGALORE) must appear before the branch
+        assert result.index('commit id: "TRIMGALORE"') < result.index("branch ")
 
     def test_minimal_process(self):
         pipeline = parse_nextflow_file(fixture_path("minimal_process.nf"))
@@ -216,12 +286,18 @@ class TestNfCoreEndToEnd:
         """nf-core/fetchngs SRA workflow renders as a valid gitGraph."""
         pipeline = parse_nextflow_file(fixture_path("nf_core_fetchngs_sra.nf"))
         result = pipeline_to_mermaid(pipeline, title="nf-core/fetchngs")
-        assert result.startswith("---\ntitle: nf-core/fetchngs\n---\ngitGraph")
+        assert result.startswith(
+            "---\ntitle: nf-core/fetchngs\n---\n"
+            + _DEFAULT_INIT
+            + "\ngitGraph"
+        )
         assert 'commit id: "SRA_IDS_TO_RUNINFO"' in result
         assert 'commit id: "SRA_RUNINFO_TO_FTP"' in result
         # Parallel tools (Aspera, sra-tools, FTP) show as branches
         assert "branch" in result
         assert "ASPERA_CLI" in result
+        # main must have a commit before the first branch
+        assert result.index("commit id:") < result.index("branch ")
 
     def test_fastqc_module_gitgraph(self):
         """nf-core FASTQC module renders as a single-commit gitGraph."""

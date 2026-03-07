@@ -1,0 +1,56 @@
+name: Update README examples
+
+# Regenerates all example diagrams in README.md on every push to main
+# and on every pull request that touches the source code or fixture files.
+# Each diagram block in README.md carries preset attributes (pipeline, title,
+# format) so a single `nf-mapper --regenerate README.md` updates them all.
+#
+# On push to main the updated README is committed back automatically.
+# Same-repo PR branches are also updated; fork PRs skip the commit step.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "nf_mapper/**"
+      - "tests/fixtures/**"
+  pull_request:
+    paths:
+      - "nf_mapper/**"
+      - "tests/fixtures/**"
+
+permissions:
+  contents: write
+
+jobs:
+  update-examples:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install nf-mapper
+        run: pip install --quiet -e .
+
+      - name: Regenerate all README examples
+        run: nf-mapper --regenerate README.md
+
+      - name: Commit updated examples
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet || \
+            git commit -m "docs: regenerate README examples [skip ci]" && \
+            git push

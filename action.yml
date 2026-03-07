@@ -11,7 +11,7 @@ inputs:
     description: "Path to the Nextflow pipeline file (.nf) to convert"
     required: true
   output:
-    description: "Path where the Mermaid diagram will be written (default: diagram.md)"
+    description: "Path where the Mermaid diagram will be written (default: diagram.md). Ignored when 'update' is set."
     required: false
     default: "diagram.md"
   title:
@@ -22,10 +22,22 @@ inputs:
     description: "Output format: 'plain' (raw Mermaid) or 'md' (fenced code block) (default: md)"
     required: false
     default: "md"
+  config:
+    description: "JSON object of Mermaid gitGraph config overrides, e.g. '{\"showBranches\": true}'. Merged with defaults: showBranches=false, parallelCommits=true."
+    required: false
+    default: ""
+  update:
+    description: "Path to an existing Markdown file containing <!-- MARKER --> / <!-- /MARKER --> comment blocks. When set, the matching block is updated in-place instead of writing a new file."
+    required: false
+    default: ""
+  marker:
+    description: "Marker name identifying which comment block to update (default: nf-mapper). Use a unique name per diagram when a file contains multiple nf-mapper blocks, e.g. 'main-pipeline' targets <!-- main-pipeline --> / <!-- /main-pipeline -->."
+    required: false
+    default: "nf-mapper"
 
 outputs:
   diagram:
-    description: "Path to the generated Mermaid diagram file"
+    description: "Path to the generated or updated Mermaid diagram file"
     value: ${{ steps.generate.outputs.diagram }}
 
 runs:
@@ -44,10 +56,20 @@ runs:
       id: generate
       shell: bash
       run: |
-        OUTPUT="${{ inputs.output }}"
-        ARGS="${{ inputs.pipeline }} -o ${OUTPUT} --format ${{ inputs.format }}"
+        ARGS="${{ inputs.pipeline }} --format ${{ inputs.format }}"
         if [ -n "${{ inputs.title }}" ]; then
           ARGS="${ARGS} --title '${{ inputs.title }}'"
         fi
-        eval nf-mapper ${ARGS}
-        echo "diagram=${OUTPUT}" >> "$GITHUB_OUTPUT"
+        if [ -n "${{ inputs.config }}" ]; then
+          ARGS="${ARGS} --config '${{ inputs.config }}'"
+        fi
+        if [ -n "${{ inputs.update }}" ]; then
+          ARGS="${ARGS} --update '${{ inputs.update }}' --marker '${{ inputs.marker }}'"
+          eval nf-mapper ${ARGS}
+          echo "diagram=${{ inputs.update }}" >> "$GITHUB_OUTPUT"
+        else
+          OUTPUT="${{ inputs.output }}"
+          ARGS="${ARGS} -o ${OUTPUT}"
+          eval nf-mapper ${ARGS}
+          echo "diagram=${OUTPUT}" >> "$GITHUB_OUTPUT"
+        fi

@@ -56,6 +56,15 @@ nf-mapper workflow.nf --title "My Pipeline" --format md
 
 # Save to a file
 nf-mapper workflow.nf -o diagram.md --format md
+
+# Override Mermaid gitGraph config options
+nf-mapper workflow.nf --config '{"showBranches": true}'
+
+# Update a specific diagram block inside an existing Markdown file in-place
+nf-mapper workflow.nf --update README.md --format md
+
+# Update one of several named blocks in the same file
+nf-mapper workflow.nf --update README.md --marker my-pipeline --format md
 ```
 
 ### Python API
@@ -66,11 +75,19 @@ from nf_mapper import parse_nextflow_file, pipeline_to_mermaid
 pipeline = parse_nextflow_file("workflow.nf")
 diagram  = pipeline_to_mermaid(pipeline, title="My Pipeline")
 print(diagram)
+
+# Override any Mermaid gitGraph config option
+diagram = pipeline_to_mermaid(pipeline, config={"showBranches": True})
 ```
 
 ---
 
 ## Example outputs
+
+> These diagrams are kept up to date automatically on every push to `main`
+> by [`.github/workflows/update-readme.yml`](.github/workflows/update-readme.yml).
+> Each block is wrapped in named HTML comment markers so `nf-mapper --update`
+> can regenerate them in-place.
 
 ### Linear pipeline  *(two-step QC)*
 
@@ -84,14 +101,18 @@ workflow {
 }
 ```
 
+<!-- nf-mapper:example-linear pipeline="tests/fixtures/simple_workflow.nf" title="nf-core/rnaseq QC" format="md" -->
 ```mermaid
 ---
 title: nf-core/rnaseq QC
 ---
-gitGraph
+%%{init: {'gitGraph': {'showBranches': false, 'parallelCommits': true}} }%%
+gitGraph LR:
+   checkout main
    commit id: "FASTQC"
    commit id: "MULTIQC"
 ```
+<!-- /nf-mapper:example-linear -->
 
 ### Branching pipeline  *(QC + alignment)*
 
@@ -114,20 +135,24 @@ workflow RNASEQ {
 }
 ```
 
+<!-- nf-mapper:example-branching pipeline="tests/fixtures/complex_workflow.nf" title="RNA-seq Pipeline" format="md" -->
 ```mermaid
 ---
 title: RNA-seq Pipeline
 ---
-gitGraph
+%%{init: {'gitGraph': {'showBranches': false, 'parallelCommits': true}} }%%
+gitGraph LR:
+   checkout main
+   commit id: "TRIMGALORE"
    branch branch_1
    checkout branch_1
    commit id: "FASTQC"
    checkout main
-   commit id: "TRIMGALORE"
    commit id: "STAR_ALIGN"
    commit id: "SAMTOOLS_SORT"
    commit id: "FEATURECOUNTS"
 ```
+<!-- /nf-mapper:example-branching -->
 
 ### Real-world example – [nf-core/fetchngs](https://github.com/nf-core/fetchngs)
 
@@ -135,11 +160,15 @@ gitGraph
 nf-mapper workflows/sra/main.nf --title "nf-core/fetchngs SRA"
 ```
 
+<!-- nf-mapper:example-fetchngs pipeline="tests/fixtures/nf_core_fetchngs_sra.nf" title="nf-core/fetchngs SRA" format="md" -->
 ```mermaid
 ---
 title: nf-core/fetchngs SRA
 ---
-gitGraph
+%%{init: {'gitGraph': {'showBranches': false, 'parallelCommits': true}} }%%
+gitGraph LR:
+   checkout main
+   commit id: "SRA_IDS_TO_RUNINFO"
    branch branch_1
    checkout branch_1
    commit id: "ASPERA_CLI"
@@ -150,39 +179,80 @@ gitGraph
    checkout main
    branch branch_3
    checkout branch_3
+   commit id: "SRA_TO_SAMPLESHEET"
    commit id: "MULTIQC_MAPPINGS_CONFIG"
    checkout main
    branch branch_4
    checkout branch_4
-   commit id: "SRA_FASTQ_FTP"
+   commit id: "MULTIQC_MAPPINGS_CONFIG"
    checkout main
-   branch branch_5
-   checkout branch_5
-   commit id: "SRA_TO_SAMPLESHEET"
-   checkout main
-   commit id: "SRA_IDS_TO_RUNINFO"
    commit id: "SRA_RUNINFO_TO_FTP"
+   commit id: "SRA_FASTQ_FTP"
 ```
+<!-- /nf-mapper:example-fetchngs -->
 
 ---
 
 ## CLI reference
 
 ```
-usage: nf-mapper [-h] [-o FILE] [--title TITLE] [--format {plain,md}] PIPELINE.NF
+usage: nf-mapper [-h] [-o FILE | --update FILE | --regenerate FILE]
+                 [--marker NAME] [--title TITLE] [--format {plain,md}]
+                 [--config JSON]
+                 [PIPELINE.NF]
 
 positional arguments:
   PIPELINE.NF           Path to the Nextflow pipeline file to parse.
+                        Not required when --regenerate is used.
 
 options:
   -h, --help            show this help message and exit
   -o FILE, --output FILE
                         Write the diagram to FILE instead of stdout.
+  --update FILE         Update the diagram inside <!-- MARKER --> /
+                        <!-- /MARKER --> comment blocks in FILE. Use
+                        --marker to target a specific block when a file
+                        contains multiple diagrams.
+  --regenerate FILE     Scan FILE for all nf-mapper comment blocks that
+                        carry a 'pipeline' preset attribute and regenerate
+                        each one in-place. PIPELINE.NF is not required.
+                        Preset: <!-- nf-mapper pipeline="p.nf" title="T" format="md" -->
+  --marker NAME         Marker name used with --update (default: nf-mapper).
   --title TITLE         Optional diagram title.
   --format {plain,md}   Output format: 'plain' emits raw Mermaid syntax;
                         'md' wraps it in a fenced code block (default: plain).
+  --config JSON         JSON object of Mermaid gitGraph config overrides,
+                        e.g. '{"showBranches": true}'. Merged with defaults:
+                        showBranches=false, parallelCommits=true.
 ```
 
+### Preset attributes
+
+Each `<!-- nf-mapper -->` comment block in a Markdown file can carry preset
+attributes that are read back by `--regenerate`:
+
+| Attribute | Required | Description |
+|---|---|---|
+| `pipeline` | ✅ | Path to the `.nf` file (relative to the Markdown file) |
+| `title` | | Diagram title |
+| `format` | | `plain` or `md` (default: `md`) |
+| `config` | | JSON object of Mermaid gitGraph config overrides |
+
+Use unique marker names when a file contains multiple diagrams:
+
+```markdown
+<!-- nf-mapper:main-wf pipeline="workflows/main.nf" title="Main" format="md" -->
+<!-- /nf-mapper:main-wf -->
+
+<!-- nf-mapper:qc pipeline="workflows/qc.nf" title="QC" format="md" -->
+<!-- /nf-mapper:qc -->
+```
+
+Then regenerate all at once:
+
+```bash
+nf-mapper --regenerate README.md
+```
 ---
 
 ## Python API reference
@@ -213,15 +283,28 @@ content = open("workflow.nf").read()
 pipeline = parse_nextflow_content(content)
 ```
 
-### `pipeline_to_mermaid(pipeline, title=None) → str`
+### `pipeline_to_mermaid(pipeline, title=None, config=None) → str`
 
 Convert a `ParsedPipeline` to a Mermaid `gitGraph` string.
 
 ```python
 from nf_mapper import pipeline_to_mermaid
 
+# Default config (showBranches=false, parallelCommits=true)
 diagram = pipeline_to_mermaid(pipeline, title="My Workflow")
+
+# Override any Mermaid gitGraph option
+diagram = pipeline_to_mermaid(pipeline, config={"showBranches": True})
+
+# Merge with defaults – only the keys you supply are overridden
+diagram = pipeline_to_mermaid(pipeline, config={"rotateCommitLabel": False})
 ```
+
+The `config` dict is merged on top of the built-in defaults
+(`showBranches: false`, `parallelCommits: true`).
+Any key accepted by Mermaid's
+[gitGraph init options](https://mermaid.js.org/syntax/gitgraph.html#gitgraph-specific-configuration-options)
+can be supplied.
 
 ### Data classes
 
@@ -238,6 +321,8 @@ diagram = pipeline_to_mermaid(pipeline, title="My Workflow")
 
 Add nf-mapper to any workflow to automatically generate a pipeline diagram
 and commit it to your repository or attach it to a pull request.
+
+### Write to a new file
 
 ```yaml
 # .github/workflows/diagram.yml
@@ -271,20 +356,61 @@ jobs:
           git push
 ```
 
+### Update a block inside an existing Markdown file
+
+Place one or more marker pairs in your Markdown file:
+
+```markdown
+## Pipeline diagram
+
+<!-- main-pipeline -->
+<!-- /main-pipeline -->
+
+## QC diagram
+
+<!-- qc-pipeline -->
+<!-- /qc-pipeline -->
+```
+
+Then update each block independently:
+
+```yaml
+- name: Update main pipeline diagram
+  uses: Skitionek/nf-mapper@main
+  with:
+    pipeline: workflows/main.nf
+    update: README.md
+    marker: main-pipeline
+    title: Main Pipeline
+    format: md
+
+- name: Update QC diagram
+  uses: Skitionek/nf-mapper@main
+  with:
+    pipeline: workflows/qc.nf
+    update: README.md
+    marker: qc-pipeline
+    title: QC Pipeline
+    format: md
+```
+
 ### Action inputs
 
 | Input | Required | Default | Description |
 |---|---|---|---|
 | `pipeline` | ✅ | — | Path to the `.nf` file |
-| `output` | | `diagram.md` | Output file path |
+| `output` | | `diagram.md` | Output file path (ignored when `update` is set) |
 | `title` | | _(none)_ | Diagram title |
 | `format` | | `md` | `plain` or `md` |
+| `config` | | _(none)_ | JSON object of Mermaid gitGraph config overrides, e.g. `{"showBranches": true}` |
+| `update` | | _(none)_ | Path to a Markdown file with `<!-- MARKER -->` / `<!-- /MARKER -->` blocks to update in-place |
+| `marker` | | `nf-mapper` | Marker name identifying which block to update; use unique names for multiple diagrams in one file |
 
 ### Action outputs
 
 | Output | Description |
 |---|---|
-| `diagram` | Path to the generated diagram file |
+| `diagram` | Path to the generated or updated diagram file |
 
 ---
 

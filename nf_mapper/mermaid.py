@@ -13,10 +13,36 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nf_mapper.parser import ParsedPipeline
 
+#: Default Mermaid gitGraph configuration applied to every generated diagram.
+#: Pass *config* to :func:`pipeline_to_mermaid` to override individual keys.
+_DEFAULT_GRAPH_CONFIG: dict[str, object] = {
+    "showBranches": False,
+    "parallelCommits": True,
+}
+
+
+def _format_config(config: dict[str, object]) -> str:
+    """Serialize *config* as a JS-style object literal with single-quoted keys.
+
+    Booleans are rendered as ``true``/``false``, strings are single-quoted,
+    and all other values are coerced with :func:`str`.
+    """
+    pairs = []
+    for k, v in config.items():
+        if isinstance(v, bool):
+            val = "true" if v else "false"
+        elif isinstance(v, str):
+            val = f"'{v}'"
+        else:
+            val = str(v)
+        pairs.append(f"'{k}': {val}")
+    return "{" + ", ".join(pairs) + "}"
+
 
 def pipeline_to_mermaid(
     pipeline: ParsedPipeline,
     title: str | None = None,
+    config: dict[str, object] | None = None,
 ) -> str:
     """Convert *pipeline* to a Mermaid ``gitGraph`` diagram string.
 
@@ -31,6 +57,12 @@ def pipeline_to_mermaid(
         :func:`~nf_mapper.parser.parse_nextflow_file`.
     title:
         Optional diagram title inserted as a YAML front-matter block.
+    config:
+        Optional mapping of Mermaid `gitGraph` config keys to override.
+        Merged on top of :data:`_DEFAULT_GRAPH_CONFIG` (``showBranches: false``,
+        ``parallelCommits: true``).  Any key accepted by the Mermaid
+        ``%%{init}%%`` gitGraph directive may be supplied, e.g.
+        ``{"showBranches": True, "rotateCommitLabel": False}``.
 
     Returns
     -------
@@ -45,7 +77,9 @@ def pipeline_to_mermaid(
     ---
     title: My Pipeline
     ---
-    gitGraph
+    %%{init: {'gitGraph': {'showBranches': false, 'parallelCommits': true}} }%%
+    gitGraph LR:
+       checkout main
        commit id: "PROCESS_A"
        commit id: "PROCESS_B"
     """
@@ -54,7 +88,10 @@ def pipeline_to_mermaid(
     if title:
         lines += ["---", f"title: {title}", "---"]
 
+    merged_config = {**_DEFAULT_GRAPH_CONFIG, **(config or {})}
+    lines.append(f"%%{{init: {{'gitGraph': {_format_config(merged_config)}}} }}%%")
     lines.append("gitGraph LR:")
+    lines.append("   checkout main")
 
     if pipeline.connections:
         _render_dag(lines, pipeline)
@@ -148,15 +185,13 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
         branch_counter[0] += 1
         return f"branch_{branch_counter[0]}"
 
-    # 1. Off-main source nodes (no main-path predecessor) → branch before main
-    for node in branch_hang.get(None, []):
-        bname = next_branch()
-        lines.append(f"   branch {bname}")
-        lines.append(f"   checkout {bname}")
-        _emit_off_chain(lines, node, main_set, successors)
-        lines.append("   checkout main")
+    # Ensure main is described before any branch: attach source-only nodes
+    # (those with no predecessor on main) to the first main-path node so that
+    # main always has at least one commit before branching begins.
+    if main_path and None in branch_hang:
+        branch_hang[main_path[0]].extend(branch_hang.pop(None))
 
-    # 2. Main path commits, with branches hanging off each node
+    # Emit main path commits, with branches hanging off each node
     for node in main_path:
         lines.append(f'   commit id: "{node}"')
 
