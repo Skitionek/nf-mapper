@@ -118,7 +118,7 @@ class TestConfigFlag:
         """--config with invalid JSON exits with a non-zero return code."""
         result = run_cli(fixture_path("simple_workflow.nf"), "--config", "not-json")
         assert result.returncode != 0
-        assert "JSON" in result.stderr or "json" in result.stderr.lower()
+        assert "json" in result.stderr.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +180,7 @@ class TestUpdateMarker:
         )
         content = md.read_text()
         assert "block-a-old" not in content   # updated
+        assert "FASTQC" in content.split("<!-- /pipeline-a -->")[0]  # new content in block-a
         assert "block-b-old" in content       # untouched
 
     def test_update_missing_markers_exits_nonzero(self, tmp_path):
@@ -198,3 +199,108 @@ class TestUpdateMarker:
             "-o", str(tmp_path / "out.md"),
         )
         assert result.returncode != 0
+
+    def test_update_preserves_opening_marker_with_attrs(self, tmp_path):
+        """--update keeps preset attributes in the opening comment intact."""
+        md = tmp_path / "README.md"
+        md.write_text(
+            '<!-- nf-mapper pipeline="some.nf" title="T" -->\n'
+            "old\n"
+            "<!-- /nf-mapper -->\n"
+        )
+        run_cli(
+            fixture_path("simple_workflow.nf"),
+            "--update", str(md),
+            "--format", "md",
+        )
+        content = md.read_text()
+        # Opening marker with attributes must be preserved
+        assert 'pipeline="some.nf"' in content
+        assert "FASTQC" in content
+
+
+# ---------------------------------------------------------------------------
+# --regenerate flag
+# ---------------------------------------------------------------------------
+
+
+class TestRegenerate:
+    def test_regenerate_single_block(self, tmp_path):
+        """--regenerate updates a block that has a pipeline preset."""
+        nf = fixture_path("simple_workflow.nf")
+        md = tmp_path / "README.md"
+        md.write_text(
+            f'<!-- nf-mapper pipeline="{nf}" title="QC" format="md" -->\n'
+            "old content\n"
+            "<!-- /nf-mapper -->\n"
+        )
+        result = run_cli("--regenerate", str(md))
+        assert result.returncode == 0, result.stderr
+        content = md.read_text()
+        assert "FASTQC" in content
+        assert "```mermaid" in content
+        assert "old content" not in content
+
+    def test_regenerate_multiple_named_blocks(self, tmp_path):
+        """--regenerate updates every named block with a pipeline preset."""
+        nf = fixture_path("simple_workflow.nf")
+        md = tmp_path / "README.md"
+        md.write_text(
+            f'<!-- nf-mapper:first pipeline="{nf}" title="First" format="md" -->\n'
+            "old-first\n"
+            "<!-- /nf-mapper:first -->\n"
+            "\n"
+            f'<!-- nf-mapper:second pipeline="{nf}" title="Second" format="md" -->\n'
+            "old-second\n"
+            "<!-- /nf-mapper:second -->\n"
+        )
+        result = run_cli("--regenerate", str(md))
+        assert result.returncode == 0, result.stderr
+        content = md.read_text()
+        assert "old-first" not in content
+        assert "old-second" not in content
+        assert content.count("FASTQC") >= 2
+
+    def test_regenerate_skips_block_without_pipeline(self, tmp_path):
+        """--regenerate leaves blocks that have no pipeline attribute alone."""
+        md = tmp_path / "README.md"
+        md.write_text(
+            "<!-- nf-mapper -->\nuntouched\n<!-- /nf-mapper -->\n"
+        )
+        result = run_cli("--regenerate", str(md))
+        assert result.returncode == 0, result.stderr
+        assert "untouched" in md.read_text()
+
+    def test_regenerate_no_pipeline_arg_needed(self, tmp_path):
+        """--regenerate works without a positional PIPELINE.NF argument."""
+        nf = fixture_path("simple_workflow.nf")
+        md = tmp_path / "README.md"
+        md.write_text(
+            f'<!-- nf-mapper pipeline="{nf}" format="md" -->\n'
+            "old\n"
+            "<!-- /nf-mapper -->\n"
+        )
+        result = run_cli("--regenerate", str(md))
+        assert result.returncode == 0, result.stderr
+
+    def test_regenerate_and_output_are_mutually_exclusive(self, tmp_path):
+        """--regenerate and -o cannot be used together."""
+        result = run_cli(
+            "--regenerate", str(tmp_path / "README.md"),
+            "-o", str(tmp_path / "out.md"),
+        )
+        assert result.returncode != 0
+
+    def test_regenerate_preserves_opening_marker_attrs(self, tmp_path):
+        """--regenerate keeps preset attributes in the opening comment."""
+        nf = fixture_path("simple_workflow.nf")
+        md = tmp_path / "README.md"
+        md.write_text(
+            f'<!-- nf-mapper pipeline="{nf}" title="My Title" format="md" -->\n'
+            "old\n"
+            "<!-- /nf-mapper -->\n"
+        )
+        run_cli("--regenerate", str(md))
+        content = md.read_text()
+        assert f'pipeline="{nf}"' in content
+        assert 'title="My Title"' in content

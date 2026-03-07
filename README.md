@@ -101,7 +101,7 @@ workflow {
 }
 ```
 
-<!-- example-linear -->
+<!-- nf-mapper:example-linear pipeline="tests/fixtures/simple_workflow.nf" title="nf-core/rnaseq QC" format="md" -->
 ```mermaid
 ---
 title: nf-core/rnaseq QC
@@ -112,7 +112,7 @@ gitGraph LR:
    commit id: "FASTQC"
    commit id: "MULTIQC"
 ```
-<!-- /example-linear -->
+<!-- /nf-mapper:example-linear -->
 
 ### Branching pipeline  *(QC + alignment)*
 
@@ -135,7 +135,7 @@ workflow RNASEQ {
 }
 ```
 
-<!-- example-branching -->
+<!-- nf-mapper:example-branching pipeline="tests/fixtures/complex_workflow.nf" title="RNA-seq Pipeline" format="md" -->
 ```mermaid
 ---
 title: RNA-seq Pipeline
@@ -152,7 +152,7 @@ gitGraph LR:
    commit id: "SAMTOOLS_SORT"
    commit id: "FEATURECOUNTS"
 ```
-<!-- /example-branching -->
+<!-- /nf-mapper:example-branching -->
 
 ### Real-world example – [nf-core/fetchngs](https://github.com/nf-core/fetchngs)
 
@@ -160,7 +160,7 @@ gitGraph LR:
 nf-mapper workflows/sra/main.nf --title "nf-core/fetchngs SRA"
 ```
 
-<!-- example-fetchngs -->
+<!-- nf-mapper:example-fetchngs pipeline="tests/fixtures/nf_core_fetchngs_sra.nf" title="nf-core/fetchngs SRA" format="md" -->
 ```mermaid
 ---
 title: nf-core/fetchngs SRA
@@ -189,19 +189,21 @@ gitGraph LR:
    commit id: "SRA_RUNINFO_TO_FTP"
    commit id: "SRA_FASTQ_FTP"
 ```
-<!-- /example-fetchngs -->
+<!-- /nf-mapper:example-fetchngs -->
 
 ---
 
 ## CLI reference
 
 ```
-usage: nf-mapper [-h] [-o FILE | --update FILE] [--marker NAME]
-                 [--title TITLE] [--format {plain,md}] [--config JSON]
-                 PIPELINE.NF
+usage: nf-mapper [-h] [-o FILE | --update FILE | --regenerate FILE]
+                 [--marker NAME] [--title TITLE] [--format {plain,md}]
+                 [--config JSON]
+                 [PIPELINE.NF]
 
 positional arguments:
   PIPELINE.NF           Path to the Nextflow pipeline file to parse.
+                        Not required when --regenerate is used.
 
 options:
   -h, --help            show this help message and exit
@@ -209,12 +211,13 @@ options:
                         Write the diagram to FILE instead of stdout.
   --update FILE         Update the diagram inside <!-- MARKER --> /
                         <!-- /MARKER --> comment blocks in FILE. Use
-                        --marker to specify which block when a file
+                        --marker to target a specific block when a file
                         contains multiple diagrams.
+  --regenerate FILE     Scan FILE for all nf-mapper comment blocks that
+                        carry a 'pipeline' preset attribute and regenerate
+                        each one in-place. PIPELINE.NF is not required.
+                        Preset: <!-- nf-mapper pipeline="p.nf" title="T" format="md" -->
   --marker NAME         Marker name used with --update (default: nf-mapper).
-                        Use a unique name per diagram when a file has
-                        multiple blocks, e.g. '<!-- my-pipeline -->' /
-                        '<!-- /my-pipeline -->'.
   --title TITLE         Optional diagram title.
   --format {plain,md}   Output format: 'plain' emits raw Mermaid syntax;
                         'md' wraps it in a fenced code block (default: plain).
@@ -223,6 +226,33 @@ options:
                         showBranches=false, parallelCommits=true.
 ```
 
+### Preset attributes
+
+Each `<!-- nf-mapper -->` comment block in a Markdown file can carry preset
+attributes that are read back by `--regenerate`:
+
+| Attribute | Required | Description |
+|---|---|---|
+| `pipeline` | ✅ | Path to the `.nf` file (relative to the Markdown file) |
+| `title` | | Diagram title |
+| `format` | | `plain` or `md` (default: `md`) |
+| `config` | | JSON object of Mermaid gitGraph config overrides |
+
+Use unique marker names when a file contains multiple diagrams:
+
+```markdown
+<!-- nf-mapper:main-wf pipeline="workflows/main.nf" title="Main" format="md" -->
+<!-- /nf-mapper:main-wf -->
+
+<!-- nf-mapper:qc pipeline="workflows/qc.nf" title="QC" format="md" -->
+<!-- /nf-mapper:qc -->
+```
+
+Then regenerate all at once:
+
+```bash
+nf-mapper --regenerate README.md
+```
 ---
 
 ## Python API reference

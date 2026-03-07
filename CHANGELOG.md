@@ -57,9 +57,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`update` and `marker` GitHub Action inputs** – expose `--update` /
   `--marker` in the Action for in-place README and wiki updates.
 
-- **`.github/workflows/update-readme.yml`** – new workflow that regenerates
-  the three README example diagrams automatically on every push to `main`
-  and on pull requests that touch source or fixture files.
+- **`--regenerate FILE`** – scan a Markdown file for every `nf-mapper`
+  comment block that carries a `pipeline` preset attribute and regenerate
+  each one in-place with a single command.  No `PIPELINE.NF` argument is
+  needed.  Preset attributes supported in the opening comment:
+
+  | Attribute | Description |
+  |---|---|
+  | `pipeline` | Path to the `.nf` file (relative to the Markdown file) |
+  | `title` | Diagram title |
+  | `format` | `plain` or `md` (default: `md`) |
+  | `config` | JSON object of Mermaid gitGraph config overrides |
+
+  Example — two named blocks in one file, regenerated with a single call:
+
+  ```markdown
+  <!-- nf-mapper:main pipeline="workflows/main.nf" title="Main" format="md" -->
+  <!-- /nf-mapper:main -->
+
+  <!-- nf-mapper:qc pipeline="workflows/qc.nf" title="QC" format="md" -->
+  <!-- /nf-mapper:qc -->
+  ```
+
+  ```bash
+  nf-mapper --regenerate README.md
+  ```
+
+- **`--update` preserves preset attributes** – when `--update FILE` is used,
+  the opening comment (including any preset attributes) is left untouched;
+  only the body between the markers is replaced.
+
+- **`.github/workflows/update-readme.yml`** simplified – the workflow now
+  runs a single `nf-mapper --regenerate README.md` step instead of one
+  `--update` call per example, because the preset attributes live directly
+  in the README marker comments.
 
 ### Changed
 
@@ -74,9 +105,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Future PRs
 
 ### Planned
-
-- **Multiple diagram blocks by ID** – support `<!-- nf-mapper:my-id -->` /
-  `<!-- /nf-mapper:my-id -->` as a shorthand alternative to `--marker`.
 
 - **Interactive HTML output** – render diagrams via the Mermaid JS CDN for
   standalone HTML reports.

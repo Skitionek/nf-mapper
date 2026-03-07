@@ -1,11 +1,12 @@
 name: Update README examples
 
-# Regenerates the three example diagrams in README.md on every push to main
+# Regenerates all example diagrams in README.md on every push to main
 # and on every pull request that touches the source code or fixture files.
+# Each diagram block in README.md carries preset attributes (pipeline, title,
+# format) so a single `nf-mapper --regenerate README.md` updates them all.
 #
 # On push to main the updated README is committed back automatically.
-# On pull requests the job validates that the examples are up to date;
-# if the source changed it updates the PR branch (same-repo PRs only).
+# Same-repo PR branches are also updated; fork PRs skip the commit step.
 
 on:
   push:
@@ -28,8 +29,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Check out the head of the PR branch (not the merge commit) so we
-          # can push back to it when the PR comes from the same repository.
           ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -40,36 +39,10 @@ jobs:
       - name: Install nf-mapper
         run: pip install --quiet -e .
 
-      - name: Regenerate linear pipeline example
-        uses: Skitionek/nf-mapper@main
-        with:
-          pipeline: tests/fixtures/simple_workflow.nf
-          title: "nf-core/rnaseq QC"
-          format: md
-          update: README.md
-          marker: example-linear
-
-      - name: Regenerate branching pipeline example
-        uses: Skitionek/nf-mapper@main
-        with:
-          pipeline: tests/fixtures/complex_workflow.nf
-          title: "RNA-seq Pipeline"
-          format: md
-          update: README.md
-          marker: example-branching
-
-      - name: Regenerate fetchngs example
-        uses: Skitionek/nf-mapper@main
-        with:
-          pipeline: tests/fixtures/nf_core_fetchngs_sra.nf
-          title: "nf-core/fetchngs SRA"
-          format: md
-          update: README.md
-          marker: example-fetchngs
+      - name: Regenerate all README examples
+        run: nf-mapper --regenerate README.md
 
       - name: Commit updated examples
-        # Commit on push to main, or on same-repo PRs.
-        # Fork PRs cannot push back, so we skip the commit there.
         if: |
           github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
