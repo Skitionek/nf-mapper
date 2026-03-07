@@ -1,0 +1,53 @@
+name: "nf-mapper"
+description: "Convert a Nextflow pipeline (.nf) into a Mermaid gitGraph diagram"
+author: "Skitionek"
+
+branding:
+  icon: "map"
+  color: "green"
+
+inputs:
+  pipeline:
+    description: "Path to the Nextflow pipeline file (.nf) to convert"
+    required: true
+  output:
+    description: "Path where the Mermaid diagram will be written (default: diagram.md)"
+    required: false
+    default: "diagram.md"
+  title:
+    description: "Optional diagram title"
+    required: false
+    default: ""
+  format:
+    description: "Output format: 'plain' (raw Mermaid) or 'md' (fenced code block) (default: md)"
+    required: false
+    default: "md"
+
+outputs:
+  diagram:
+    description: "Path to the generated Mermaid diagram file"
+    value: ${{ steps.generate.outputs.diagram }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install nf-mapper
+      shell: bash
+      run: pip install --quiet 'nf-mapper @ ${{ github.action_path }}'
+
+    - name: Generate diagram
+      id: generate
+      shell: bash
+      run: |
+        OUTPUT="${{ inputs.output }}"
+        ARGS="${{ inputs.pipeline }} -o ${OUTPUT} --format ${{ inputs.format }}"
+        if [ -n "${{ inputs.title }}" ]; then
+          ARGS="${ARGS} --title '${{ inputs.title }}'"
+        fi
+        eval nf-mapper ${ARGS}
+        echo "diagram=${OUTPUT}" >> "$GITHUB_OUTPUT"
