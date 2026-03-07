@@ -349,16 +349,6 @@ on every push and pull request.  See [`.github/workflows/ci.yml`](.github/workfl
 
 nf-mapper is released under the **[MIT License](LICENSE)**.
 
-### Why MIT?
-
-| Criterion | Rationale |
-|---|---|
-| **Permissive** | Anyone can use, copy, modify and distribute nf-mapper — including in closed-source pipelines — without requiring them to open-source their work. |
-| **nf-core alignment** | The entire [nf-core](https://nf-co.re/) ecosystem (pipelines, modules, tools) uses MIT. Matching the ecosystem licence removes friction for contributors and users. |
-| **Dependency compatibility** | nf-mapper depends on [groovy-parser](https://github.com/inab/python-groovy-parser) (Apache-2.0) and [Lark](https://github.com/lark-parser/lark) (MIT). MIT is compatible with both. |
-| **GitHub Actions marketplace** | MIT is one of the recommended licences for GitHub Actions published in the Marketplace. |
-| **Citation-friendly** | Bioinformatics researchers can cite and re-distribute nf-mapper freely in academic settings without legal overhead. |
-
 ### Third-party licences
 
 | Dependency | Licence |
