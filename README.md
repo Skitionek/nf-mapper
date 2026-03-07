@@ -120,7 +120,10 @@ title: nf-core/rnaseq QC
 gitGraph LR:
    checkout main
    commit id: "FASTQC"
+   commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "html"
+   commit id: "FASTQC: *.zip" type: HIGHLIGHT tag: "zip"
    commit id: "MULTIQC"
+   commit id: "MULTIQC: multiqc_report.html" type: HIGHLIGHT tag: "html"
 ```
 <!-- /nf-mapper:example-linear -->
 
@@ -159,8 +162,11 @@ gitGraph LR:
    commit id: "FASTQC"
    checkout main
    commit id: "STAR_ALIGN"
+   commit id: "STAR_ALIGN: *.bam" type: HIGHLIGHT tag: "bam"
    commit id: "SAMTOOLS_SORT"
+   commit id: "SAMTOOLS_SORT: *.sorted.bam" type: HIGHLIGHT tag: "bam"
    commit id: "FEATURECOUNTS"
+   commit id: "FEATURECOUNTS: *.counts.txt" type: HIGHLIGHT tag: "txt"
 ```
 <!-- /nf-mapper:example-branching -->
 
