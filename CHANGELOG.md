@@ -10,6 +10,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Channel nodes** – each process's `output: path("*.ext")` patterns are now
+  rendered as `type: HIGHLIGHT` commits immediately after the process commit,
+  with the file extension surfaced as a `tag` (e.g. `tag: "bam"`).  Both
+  standalone `path "*.bam"` declarations and patterns nested inside
+  `tuple val(meta), path("*.bam")` are detected.
+
+- **Cherry-pick for cross-branch channel references** – when a branch process
+  consumes a channel that was committed on a different branch (e.g. a QC step
+  that reads the aligner's `*.bam` output), a `cherry-pick id: "…"` commit is
+  emitted before the branch process to make the data-flow direction explicit.
+
+- **Per-call branches in flat mode** – when there are no explicit channel
+  connections, each independent workflow call beyond the first is placed on its
+  own `branch_N` instead of being appended linearly on `main`.
+
+- **`NfProcess.inputs` / `NfProcess.outputs`** – new list fields on
+  `NfProcess` that hold the string-literal `path(…)` patterns extracted from
+  the `input:` and `output:` labeled sections of a process body.
+
+- **Snapshot tests** – `tests/test_snapshots.py` writes
+  `tests/snapshots/*.md` on every test run so diagrams can be visually
+  validated in any Markdown renderer that supports Mermaid.
+
+- **`.github/copilot-instructions.md`** – codebase summary for AI coding
+  agents (replaces the ad-hoc `CODEBASE_NOTES.md`).
+
+### Fixed
+
+- **Branch-merge duplication bug** – `_render_dag` previously called
+  `main_path.remove()` inside the iteration loop, which silently skipped
+  nodes.  The loop now uses an `emitted: set[str]` guard instead.
+
+- **Stray `break` after first merge** – a `break` statement prevented any
+  off-nodes beyond the first from receiving their own branches when multiple
+  parallel processes hung off the same main-path node.  All off-nodes are now
+  handled correctly.
+
 - **Generic `config` parameter for `pipeline_to_mermaid()`** – accepts an
   optional `config: dict[str, object]` whose keys are merged on top of the
   built-in defaults, allowing any Mermaid
