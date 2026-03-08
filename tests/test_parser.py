@@ -280,3 +280,109 @@ class TestDataClasses:
         pp = ParsedPipeline(processes=[], workflows=[], includes=[], connections=[])
         assert pp.processes == []
         assert pp.connections == []
+
+
+# ---------------------------------------------------------------------------
+# Channel parsing (NfProcess.inputs / NfProcess.outputs)
+# ---------------------------------------------------------------------------
+
+
+class TestChannelParsing:
+    """Tests for path-channel extraction from process input/output sections."""
+
+    def test_output_glob_patterns_extracted(self):
+        """String-literal path patterns in output: are stored in outputs."""
+        content = """
+        process ALIGN {
+            output:
+                tuple val(meta), path("*.bam"), emit: bam
+            script: 'echo hi'
+        }
+        """
+        result = parse_nextflow_content(content)
+        assert len(result.processes) == 1
+        assert "*.bam" in result.processes[0].outputs
+
+    def test_multiple_output_lines(self):
+        """Multiple output lines each contribute to outputs."""
+        content = """
+        process FASTQC {
+            output:
+                tuple val(meta), path("*.html"), emit: html
+                tuple val(meta), path("*.zip"),  emit: zip
+            script: 'echo hi'
+        }
+        """
+        result = parse_nextflow_content(content)
+        proc = result.processes[0]
+        assert "*.html" in proc.outputs
+        assert "*.zip" in proc.outputs
+
+    def test_bare_path_without_tuple(self):
+        """A bare path "file.html" output (no tuple) is also captured."""
+        content = """
+        process MULTIQC {
+            output:
+                path "multiqc_report.html", emit: report
+            script: 'echo hi'
+        }
+        """
+        result = parse_nextflow_content(content)
+        assert "multiqc_report.html" in result.processes[0].outputs
+
+    def test_variable_path_not_captured(self):
+        """path(reads) with a bare variable name produces no output entry."""
+        content = """
+        process PROC {
+            input:
+                path reads
+            output:
+                path outfile
+            script: 'echo hi'
+        }
+        """
+        result = parse_nextflow_content(content)
+        proc = result.processes[0]
+        assert proc.inputs == []
+        assert proc.outputs == []
+
+    def test_script_paths_not_captured(self):
+        """String literals inside script: blocks are not captured as channels."""
+        content = """
+        process PROC {
+            output:
+                path "*.bam", emit: bam
+            script:
+            '''
+            path("some/fake/path.bam")
+            '''
+        }
+        """
+        result = parse_nextflow_content(content)
+        proc = result.processes[0]
+        # Only the real output, not any strings from the script block
+        assert proc.outputs == ["*.bam"]
+
+    def test_default_inputs_outputs_empty(self):
+        """NfProcess created without inputs/outputs defaults to empty lists."""
+        proc = NfProcess(name="FOO")
+        assert proc.inputs == []
+        assert proc.outputs == []
+
+    def test_simple_workflow_fixture_outputs(self):
+        """simple_workflow.nf FASTQC process has the expected outputs."""
+        pipeline = parse_nextflow_file(
+            os.path.join(FIXTURES, "simple_workflow.nf")
+        )
+        fastqc = next(p for p in pipeline.processes if p.name == "FASTQC")
+        assert "*.html" in fastqc.outputs
+        assert "*.zip" in fastqc.outputs
+
+    def test_nf_core_fastqc_module_outputs(self):
+        """nf_core_fastqc_module.nf FASTQC process has *.html and *.zip outputs."""
+        pipeline = parse_nextflow_file(
+            os.path.join(FIXTURES, "nf_core_fastqc_module.nf")
+        )
+        fastqc = pipeline.processes[0]
+        assert "*.html" in fastqc.outputs
+        assert "*.zip" in fastqc.outputs

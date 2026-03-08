@@ -306,3 +306,298 @@ class TestNfCoreEndToEnd:
         assert "gitGraph" in result
         assert 'commit id: "FASTQC"' in result
         assert "branch" not in result
+
+
+# ---------------------------------------------------------------------------
+# Channel nodes (HIGHLIGHT commits)
+# ---------------------------------------------------------------------------
+
+
+class TestChannelNodes:
+    """Tests for output-channel HIGHLIGHT commit nodes."""
+
+    def test_output_channel_creates_highlight(self):
+        """A process with an output path pattern emits a HIGHLIGHT commit."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="ALIGN", outputs=["*.bam"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert 'commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "bam"' in result
+
+    def test_highlight_placed_after_process_commit(self):
+        """HIGHLIGHT channel commit appears immediately after the process commit."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="ALIGN", outputs=["*.bam"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        idx_proc = result.index('commit id: "ALIGN"')
+        idx_chan = result.index('commit id: "ALIGN: *.bam"')
+        assert idx_proc < idx_chan
+
+    def test_multiple_outputs_each_get_highlight(self):
+        """Every output pattern produces its own HIGHLIGHT commit."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="FASTQC", outputs=["*.html", "*.zip"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert 'commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "html"' in result
+        assert 'commit id: "FASTQC: *.zip" type: HIGHLIGHT tag: "zip"' in result
+
+    def test_no_highlight_when_no_outputs(self):
+        """Processes without declared path outputs emit no HIGHLIGHT commits."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="HELLO")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "HIGHLIGHT" not in result
+
+    def test_extension_used_as_tag(self):
+        """The tag is the file extension stripped from the glob pattern."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="SORT", outputs=["*.sorted.bam"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert 'tag: "bam"' in result
+        assert "*.sorted.bam" in result
+
+    def test_output_without_extension_has_no_tag(self):
+        """Glob patterns with no extension produce a HIGHLIGHT without a tag."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="PROC", outputs=["prefix_*"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert 'commit id: "PROC: prefix_*" type: HIGHLIGHT' in result
+        assert "tag:" not in result
+
+    def test_simple_workflow_channels(self):
+        """Parsed simple_workflow.nf has correct output channel HIGHLIGHT nodes."""
+        pipeline = parse_nextflow_file(fixture_path("simple_workflow.nf"))
+        result = pipeline_to_mermaid(pipeline)
+        assert 'commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "html"' in result
+        assert 'commit id: "FASTQC: *.zip" type: HIGHLIGHT tag: "zip"' in result
+        assert 'commit id: "MULTIQC: multiqc_report.html" type: HIGHLIGHT tag: "html"' in result
+
+    def test_complex_workflow_channels(self):
+        """complex_workflow.nf locally-defined processes emit channel nodes."""
+        pipeline = parse_nextflow_file(fixture_path("complex_workflow.nf"))
+        result = pipeline_to_mermaid(pipeline)
+        assert 'commit id: "STAR_ALIGN: *.bam" type: HIGHLIGHT tag: "bam"' in result
+        assert 'commit id: "FEATURECOUNTS: *.counts.txt" type: HIGHLIGHT tag: "txt"' in result
+
+    def test_channel_nodes_do_not_create_branches(self):
+        """Adding channel nodes to a linear pipeline must not introduce branches."""
+        pipeline = _make_pipeline(
+            processes=[
+                NfProcess(name="ALIGN", outputs=["*.bam"]),
+                NfProcess(name="SORT", outputs=["*.sorted.bam"]),
+            ],
+            connections=[("ALIGN", "SORT")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "branch" not in result
+        assert "HIGHLIGHT" in result
+
+
+# ---------------------------------------------------------------------------
+# Cherry-pick (cross-branch channel references)
+# ---------------------------------------------------------------------------
+
+
+class TestCherryPick:
+    """Tests for cherry-pick commits when a branch process uses a channel
+    that was committed on a different branch."""
+
+    def test_cherry_pick_when_branch_uses_main_channel(self):
+        """Branch process cherry-picks output channel from its main predecessor."""
+        pipeline = _make_pipeline(
+            processes=[
+                NfProcess(name="ALIGN", outputs=["*.bam"]),
+                NfProcess(name="SORT"),
+                NfProcess(name="QC"),
+            ],
+            connections=[("ALIGN", "SORT"), ("ALIGN", "QC")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert 'cherry-pick id: "ALIGN: *.bam"' in result
+
+    def test_no_cherry_pick_on_same_branch(self):
+        """No cherry-pick when both source and consumer are on main."""
+        pipeline = _make_pipeline(
+            processes=[
+                NfProcess(name="ALIGN", outputs=["*.bam"]),
+                NfProcess(name="SORT"),
+            ],
+            connections=[("ALIGN", "SORT")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "cherry-pick" not in result
+
+    def test_cherry_pick_before_process_commit(self):
+        """Cherry-pick appears before the branch process commit."""
+        pipeline = _make_pipeline(
+            processes=[
+                NfProcess(name="ALIGN", outputs=["*.bam"]),
+                NfProcess(name="SORT"),
+                NfProcess(name="QC"),
+            ],
+            connections=[("ALIGN", "SORT"), ("ALIGN", "QC")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        idx_pick = result.index('cherry-pick id: "ALIGN: *.bam"')
+        idx_qc = result.index('commit id: "QC"')
+        assert idx_pick < idx_qc
+
+
+# ---------------------------------------------------------------------------
+# Workflow-call branches (flat rendering)
+# ---------------------------------------------------------------------------
+
+
+class TestWorkflowCallBranches:
+    """Tests for the flat renderer: each workflow call beyond the first
+    is placed on its own branch."""
+
+    def test_single_call_stays_on_main(self):
+        """A single workflow call requires no branch."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="ONLY")],
+            workflows=[NfWorkflow(name="WF", calls=["ONLY"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "branch" not in result
+        assert 'commit id: "ONLY"' in result
+
+    def test_multiple_calls_create_branches(self):
+        """Two or more independent calls each get their own branch."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="A"), NfProcess(name="B")],
+            workflows=[NfWorkflow(name="WF", calls=["A", "B"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "branch" in result
+        assert 'commit id: "A"' in result
+        assert 'commit id: "B"' in result
+
+    def test_first_call_on_main(self):
+        """The first workflow call is committed on main before any branch."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="A"), NfProcess(name="B"), NfProcess(name="C")],
+            workflows=[NfWorkflow(name="WF", calls=["A", "B", "C"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert result.index('commit id: "A"') < result.index("branch ")
+
+    def test_call_order_preserved_in_branches(self):
+        """Workflow call order is preserved even across branches."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="C"), NfProcess(name="A"), NfProcess(name="B")],
+            workflows=[NfWorkflow(name="WF", calls=["A", "B", "C"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert result.index('"A"') < result.index('"B"') < result.index('"C"')
+
+    def test_checkout_main_between_branches(self):
+        """Each branch is followed by checkout main."""
+        pipeline = _make_pipeline(
+            processes=[NfProcess(name="A"), NfProcess(name="B")],
+            workflows=[NfWorkflow(name="WF", calls=["A", "B"])],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "checkout main" in result
+
+
+# ---------------------------------------------------------------------------
+# Merge logic (bug-fix regression tests)
+# ---------------------------------------------------------------------------
+
+
+class TestMergeLogic:
+    """Tests for branch-merge behaviour, including regression tests for fixes:
+    - No duplicate commits after a fast-forward merge.
+    - Multiple off-nodes from the same main-path node all get branches.
+    """
+
+    def _merge_pipeline(self):
+        """Return a pipeline where a branch converges back onto main.
+
+        Main:  A → B → C → D
+        Branch: QC (A → QC → C)  – branches off A, merges at C.
+        """
+        return _make_pipeline(
+            processes=[
+                NfProcess(name="A"), NfProcess(name="B"),
+                NfProcess(name="C"), NfProcess(name="D"),
+                NfProcess(name="QC"),
+            ],
+            connections=[("A", "B"), ("B", "C"), ("C", "D"), ("A", "QC"), ("QC", "C")],
+        )
+
+    def test_merge_keyword_present(self):
+        """A branch that converges back to main must emit a ``merge`` statement."""
+        result = pipeline_to_mermaid(self._merge_pipeline())
+        assert "merge " in result
+
+    def test_merge_appears_after_branch(self):
+        """The ``merge`` must come after the branch checkout."""
+        result = pipeline_to_mermaid(self._merge_pipeline())
+        assert result.index("branch ") < result.index("merge ")
+
+    def test_merge_appears_before_downstream_main_commit(self):
+        """D (the node after the merge point C) appears after the merge."""
+        result = pipeline_to_mermaid(self._merge_pipeline())
+        assert result.index("merge ") < result.index('commit id: "D"')
+
+    def test_no_duplicate_commits_after_merge(self):
+        """Fast-forwarded nodes must not appear twice in the output."""
+        result = pipeline_to_mermaid(self._merge_pipeline())
+        # B is fast-forwarded before the merge and must appear exactly once
+        assert result.count('commit id: "B"') == 1
+
+    def test_all_nodes_present_after_merge(self):
+        """All five nodes appear in the merged diagram.
+
+        Note: the merge-target node (C) is represented by the ``merge`` commit
+        rather than a separate ``commit id: "C"`` line.
+        """
+        result = pipeline_to_mermaid(self._merge_pipeline())
+        for name in ("A", "B", "D", "QC"):
+            assert f'"{name}"' in result
+        # C is the merge target – it is represented by the merge statement itself
+        assert "merge " in result
+
+    def test_merge_with_channel_outputs(self):
+        """Channel HIGHLIGHT nodes are emitted correctly around a merge."""
+        pipeline = _make_pipeline(
+            processes=[
+                NfProcess(name="ALIGN", outputs=["*.bam"]),
+                NfProcess(name="SORT", outputs=["*.sorted.bam"]),
+                NfProcess(name="QC"),
+                NfProcess(name="COUNT", outputs=["*.counts.txt"]),
+            ],
+            connections=[
+                ("ALIGN", "SORT"), ("ALIGN", "QC"),
+                ("QC", "COUNT"), ("SORT", "COUNT"),
+            ],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert "merge " in result
+        # ALIGN is on main; SORT (branch) cherry-picks ALIGN's *.bam channel
+        assert 'cherry-pick id: "ALIGN: *.bam"' in result
+        # COUNT's output channels appear after the merge
+        idx_merge = result.index("merge ")
+        idx_count_chan = result.index('commit id: "COUNT: *.counts.txt"')
+        assert idx_merge < idx_count_chan
+
+    def test_multiple_off_nodes_from_same_main_node(self):
+        """Two branches from the same main-path node both get branches."""
+        pipeline = _make_pipeline(
+            processes=[
+                NfProcess(name="A"), NfProcess(name="B"),
+                NfProcess(name="QC1"), NfProcess(name="QC2"),
+            ],
+            connections=[("A", "B")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert result.count("branch ") == 2
+        assert "QC1" in result
+        assert "QC2" in result
