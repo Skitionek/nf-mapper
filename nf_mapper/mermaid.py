@@ -344,14 +344,16 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
     current_branch = "main"
 
     for node in main_path:
-        if node in emitted:
-            continue
-
-        _emit_node_with_channels(
-            lines, node, proc_lookup, predecessors, channel_branch, current_branch
-        )
-        emitted.add(node)
-
+        if node not in emitted:
+            _emit_node_with_channels(
+                lines,
+                node,
+                proc_lookup,
+                predecessors,
+                channel_branch,
+                current_branch,
+            )
+            emitted.add(node)
         for off_node in branch_hang.get(node, []):
             bname = next_branch()
             lines.append(f"   branch {bname}")
