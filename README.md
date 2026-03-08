@@ -14,6 +14,27 @@ and parallel or QC branches diverge just like in a real git history.
 
 ---
 
+## Why nf-mapper?
+
+Nextflow pipelines can grow quickly into complex, multi-step workflows that are
+difficult to navigate for anyone who did not write them.  Documentation written
+by hand quickly drifts out of sync as the pipeline evolves, leaving new
+contributors — or your future self — without a reliable overview.
+
+nf-mapper solves this by **generating pipeline diagrams automatically from the
+source code itself**, so the documentation is always in sync with the actual
+workflow.  Visualising the process graph as a metro-map-style `gitGraph` makes
+it easy to:
+
+- **Understand new projects quickly** — spot the main processing chain, parallel
+  QC branches, and file-format handoffs at a glance.
+- **Keep documentation uniform and up to date** — regenerate all diagrams with a
+  single command (or automatically via CI) whenever the pipeline changes.
+- **Onboard collaborators faster** — a visual map lowers the barrier for anyone
+  joining a project mid-way.
+
+---
+
 ## Features
 
 - Parses real-world nf-core pipelines (tested against
@@ -98,6 +119,10 @@ diagram = pipeline_to_mermaid(pipeline, config={"showBranches": True})
 > by [`.github/workflows/update-readme.yml`](.github/workflows/update-readme.yml).
 > Each block is wrapped in named HTML comment markers so `nf-mapper --update`
 > can regenerate them in-place.
+>
+> For more examples, browse the [test snapshots](tests/snapshots/) — one
+> Markdown file is generated per fixture pipeline and kept in sync with every
+> test run.
 
 ### Linear pipeline  *(two-step QC)*
 
