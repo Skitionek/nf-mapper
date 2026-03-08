@@ -151,8 +151,11 @@ class TestScenarioSnapshots:
     def test_snapshot_merge(self):
         """Diagram showing a branch that merges back into main.
 
-        Main:  ALIGN → SORT → COUNT
-        Branch: QC (ALIGN → QC → COUNT) – branches off ALIGN, merges at COUNT.
+        The longest path (ALIGN → QC → COUNT) becomes ``main``.
+        SORT branches off ALIGN and merges back at COUNT.
+
+        Main:   ALIGN → QC → COUNT
+        Branch: SORT (ALIGN → SORT → COUNT) – branches off ALIGN, merges at COUNT.
         """
         pipeline = _make_pipeline(
             processes=[
@@ -170,7 +173,7 @@ class TestScenarioSnapshots:
         _write_snapshot("scenario_merge", diagram)
         assert "merge " in diagram
         assert "branch " in diagram
-        # QC cherry-picks ALIGN's *.bam channel (ALIGN is on main, QC on branch)
+        # SORT is on the branch; it cherry-picks ALIGN's *.bam channel from main
         assert 'cherry-pick id: "ALIGN: *.bam"' in diagram
         # COUNT's channels come after the merge
         assert diagram.index("merge ") < diagram.index('commit id: "COUNT: *.counts.txt"')

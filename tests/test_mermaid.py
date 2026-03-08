@@ -581,7 +581,7 @@ class TestMergeLogic:
         )
         result = pipeline_to_mermaid(pipeline)
         assert "merge " in result
-        # ALIGN's channel is on main; QC (branch) cherry-picks it
+        # ALIGN is on main; SORT (branch) cherry-picks ALIGN's *.bam channel
         assert 'cherry-pick id: "ALIGN: *.bam"' in result
         # COUNT's output channels appear after the merge
         idx_merge = result.index("merge ")
