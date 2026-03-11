@@ -252,6 +252,7 @@ title: nf-core/fetchngs SRA
 gitGraph LR:
    checkout main
    commit id: "SRA_IDS_TO_RUNINFO"
+   commit id: "SRA_RUNINFO_TO_FTP"
    branch branch_1
    checkout branch_1
    commit id: "ASPERA_CLI"
@@ -262,15 +263,10 @@ gitGraph LR:
    checkout main
    branch branch_3
    checkout branch_3
+   commit id: "SRA_FASTQ_FTP"
+   checkout main
    commit id: "SRA_TO_SAMPLESHEET"
    commit id: "MULTIQC_MAPPINGS_CONFIG"
-   checkout main
-   branch branch_4
-   checkout branch_4
-   commit id: "MULTIQC_MAPPINGS_CONFIG"
-   checkout main
-   commit id: "SRA_RUNINFO_TO_FTP"
-   commit id: "SRA_FASTQ_FTP"
 ```
 <!-- /nf-mapper:example-fetchngs -->
 
