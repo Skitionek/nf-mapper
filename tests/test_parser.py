@@ -8,6 +8,7 @@ Nextflow code.
 from __future__ import annotations
 
 import os
+import tempfile
 
 import pytest
 
@@ -487,8 +488,6 @@ class TestRecursiveIncludeResolution:
             MISSING_PROC(params.input)
         }
         """
-        import os
-        import tempfile
         with tempfile.NamedTemporaryFile(suffix=".nf", mode="w", delete=False) as f:
             f.write(content)
             tmp = f.name

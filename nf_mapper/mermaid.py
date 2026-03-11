@@ -374,7 +374,7 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
             emitted.add(node)
         for off_node in branch_hang.get(node, []):
             if off_node in emitted:
-                # Already emitted as part of a previous off-chain; skip.
+                # Already emitted on main or another branch; skip.
                 continue
             bname = next_branch()
             lines.append(f"   branch {bname}")
