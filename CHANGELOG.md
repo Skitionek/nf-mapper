@@ -8,6 +8,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Java rewrite (breaking)** – nf-mapper is now implemented in Java
+  (`nf-mapper-java/`).  The Python implementation has been removed.
+
+  - **Parser**: uses the [official Nextflow AST library](https://www.nextflow.io/docs/latest/developer/nextflow.ast.html)
+    (`io.nextflow:nf-lang:25.04.4`).  `ScriptAstBuilder` produces a `ScriptNode`
+    that exposes `getProcesses()`, `getWorkflows()`, and `getIncludes()` —
+    dedicated typed getters for each Nextflow DSL construct.  No more
+    pattern-matching on raw Groovy `MethodCallExpression` trees.
+  - **CLI**: picocli-based `nf-mapper` command distributed as a shaded fat JAR
+    (`nf-mapper-java/target/nf-mapper-java-*.jar`).  All flags are identical
+    to the previous Python CLI (`--title`, `--format`, `-o`, `--update`,
+    `--marker`, `--regenerate`, `--config`).
+  - **Docker**: multi-stage build — Maven builder stage produces the fat JAR;
+    `eclipse-temurin:17-jre-alpine` runtime stage runs it.
+    No Python runtime required.
+  - **GitHub Action**: now sets up Java 17 and builds the fat JAR rather
+    than installing a Python package.
+  - **CI**: Maven `verify` on Java 17 replaces the Python 3.10/3.11/3.12
+    test matrix and ruff linting.
+  - **`.gitignore`**: stripped Python-specific entries; replaced with
+    Java/Maven artifact patterns.
+
+---
+
 ### Fixed
 
 - **Multi-argument and zero-argument parenthesised calls now detected** –

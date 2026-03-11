@@ -2,13 +2,12 @@
 
 [![CI](https://github.com/Skitionek/nf-mapper/actions/workflows/ci.yml/badge.svg)](https://github.com/Skitionek/nf-mapper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Java 17+](https://img.shields.io/badge/java-17%2B-blue.svg)](https://adoptium.net/)
 
 **Convert Nextflow pipelines into [Mermaid](https://mermaid.js.org/) `gitGraph` diagrams.**
 
-nf-mapper parses `.nf` files using the
-[python-groovy-parser](https://github.com/inab/python-groovy-parser) and
-renders the pipeline's process graph as a metro-map-style `gitGraph`:
+nf-mapper parses `.nf` files using the [official Nextflow AST library](https://www.nextflow.io/docs/latest/developer/nextflow.ast.html)
+(`io.nextflow:nf-lang`) and renders the pipeline's process graph as a metro-map-style `gitGraph`:
 each process is a commit, the primary processing chain stays on `main`,
 and parallel or QC branches diverge just like in a real git history.
 
@@ -41,15 +40,15 @@ it easy to:
   [nf-core/fetchngs](https://github.com/nf-core/fetchngs),
   [nf-core/rnaseq](https://github.com/nf-core/rnaseq) modules, and
   [bigbio/quantms](https://github.com/bigbio/quantms))
+- **Native Nextflow AST** – uses `io.nextflow:nf-lang` (`ScriptAstBuilder` →
+  `ScriptNode`) for accurate, first-class parsing of all Nextflow DSL2 constructs
 - **Full DSL2 call-style support** – detects process/workflow calls regardless
   of whether they use bare single-argument syntax (`PROCESS reads`),
   single-argument parenthesised syntax (`PROCESS(reads)`), multi-argument
   syntax (`PROCESS(a, b, c)`), or zero-argument syntax (`PROCESS()`).
-  This covers the nf-core parenthesised style used throughout quantms and
-  similar pipelines.
 - **Locally-defined sub-workflow calls** – when a pipeline defines a named
   `workflow FOO { … }` and then calls `FOO()` from the entry workflow, the
-  call is now correctly detected and rendered.
+  call is correctly detected and rendered.
 - Extracts **processes**, **workflows**, **includes** and infers
   **process connections** from `.out` channel references
 - Parses **`input:`/`output:`** sections to extract `path(...)` channel
@@ -62,27 +61,13 @@ it easy to:
   different branch, a `cherry-pick` commit shows the data flow explicitly
 - **Workflow-call branches**: independent workflow calls in a flat pipeline are
   each placed on their own branch instead of a linear sequence
-- Fixed **branch-merge logic**: branches no longer duplicate fast-forwarded
-  nodes; multiple branches off the same node are all handled correctly
-- Available as a **Python package**, a **CLI tool**, a **Docker image** and a **GitHub Action**
+- Available as a **CLI tool** (fat JAR), a **Docker image** and a **GitHub Action**
 
 ---
 
 ## Installation
 
-```bash
-pip install nf-mapper
-```
-
-Or install the latest development version:
-
-```bash
-pip install git+https://github.com/Skitionek/nf-mapper.git
-```
-
-**Requirements:** Python ≥ 3.10
-
-### Docker
+### Docker (recommended)
 
 A pre-built Docker image is published to the
 [GitHub Container Registry](https://ghcr.io/skitionek/nf-mapper) on every push
@@ -92,6 +77,17 @@ to `main` and for every version tag:
 docker pull ghcr.io/skitionek/nf-mapper:main
 ```
 
+### Build from source
+
+**Requirements:** Java 17+, Maven 3.6+
+
+```bash
+git clone https://github.com/Skitionek/nf-mapper.git
+cd nf-mapper/nf-mapper-java
+mvn package -DskipTests
+# Produces: target/nf-mapper-java-1.0.0.jar
+```
+
 ---
 
 ## Quick start
@@ -99,28 +95,28 @@ docker pull ghcr.io/skitionek/nf-mapper:main
 ### Command line
 
 ```bash
-# Print diagram to stdout
-nf-mapper workflow.nf
+# Print diagram to stdout (fat JAR)
+java -jar nf-mapper-java/target/nf-mapper-java-1.0.0.jar workflow.nf
 
 # Add a title and wrap in a Markdown fenced block
-nf-mapper workflow.nf --title "My Pipeline" --format md
+java -jar nf-mapper.jar workflow.nf --title "My Pipeline" --format md
 
 # Save to a file
-nf-mapper workflow.nf -o diagram.md --format md
+java -jar nf-mapper.jar workflow.nf -o diagram.md --format md
 
 # Override Mermaid gitGraph config options
-nf-mapper workflow.nf --config '{"showBranches": true}'
+java -jar nf-mapper.jar workflow.nf --config '{"showBranches": true}'
 
 # Update a specific diagram block inside an existing Markdown file in-place
-nf-mapper workflow.nf --update README.md --format md
+java -jar nf-mapper.jar workflow.nf --update README.md --format md
 
 # Update one of several named blocks in the same file
-nf-mapper workflow.nf --update README.md --marker my-pipeline --format md
+java -jar nf-mapper.jar workflow.nf --update README.md --marker my-pipeline --format md
 ```
 
 ### Docker
 
-Run nf-mapper without installing Python, by mounting the directory that
+Run nf-mapper without any local installation by mounting the directory that
 contains your `.nf` file(s) into the container:
 
 ```bash
@@ -140,19 +136,6 @@ The image tag `main` tracks the latest commit on the default branch.
 Version-pinned tags (e.g. `ghcr.io/skitionek/nf-mapper:1.2.3`) are published
 for every release.
 
-### Python API
-
-```python
-from nf_mapper import parse_nextflow_file, pipeline_to_mermaid
-
-pipeline = parse_nextflow_file("workflow.nf")
-diagram  = pipeline_to_mermaid(pipeline, title="My Pipeline")
-print(diagram)
-
-# Override any Mermaid gitGraph config option
-diagram = pipeline_to_mermaid(pipeline, config={"showBranches": True})
-```
-
 ---
 
 ## Example outputs
@@ -161,10 +144,6 @@ diagram = pipeline_to_mermaid(pipeline, config={"showBranches": True})
 > by [`.github/workflows/update-readme.yml`](.github/workflows/update-readme.yml).
 > Each block is wrapped in named HTML comment markers so `nf-mapper --update`
 > can regenerate them in-place.
->
-> For more examples, browse the [test snapshots](tests/snapshots/) — one
-> Markdown file is generated per fixture pipeline and kept in sync with every
-> test run.
 
 ### Linear pipeline  *(two-step QC)*
 
@@ -334,68 +313,6 @@ nf-mapper --regenerate README.md
 ```
 ---
 
-## Python API reference
-
-### `parse_nextflow_file(filepath) → ParsedPipeline`
-
-Parse a `.nf` file and return a structured `ParsedPipeline` object.
-
-```python
-from nf_mapper import parse_nextflow_file
-
-pipeline = parse_nextflow_file("workflow.nf")
-
-print(pipeline.processes)    # list[NfProcess]  – declared process blocks
-print(pipeline.workflows)    # list[NfWorkflow] – workflow blocks
-print(pipeline.includes)     # list[NfInclude]  – include statements
-print(pipeline.connections)  # list[tuple[str, str]] – (src, dst) edges
-```
-
-### `parse_nextflow_content(content) → ParsedPipeline`
-
-Same as above but accepts a string instead of a file path.
-
-```python
-from nf_mapper import parse_nextflow_content
-
-content = open("workflow.nf").read()
-pipeline = parse_nextflow_content(content)
-```
-
-### `pipeline_to_mermaid(pipeline, title=None, config=None) → str`
-
-Convert a `ParsedPipeline` to a Mermaid `gitGraph` string.
-
-```python
-from nf_mapper import pipeline_to_mermaid
-
-# Default config (showBranches=false, parallelCommits=true)
-diagram = pipeline_to_mermaid(pipeline, title="My Workflow")
-
-# Override any Mermaid gitGraph option
-diagram = pipeline_to_mermaid(pipeline, config={"showBranches": True})
-
-# Merge with defaults – only the keys you supply are overridden
-diagram = pipeline_to_mermaid(pipeline, config={"rotateCommitLabel": False})
-```
-
-The `config` dict is merged on top of the built-in defaults
-(`showBranches: false`, `parallelCommits: true`).
-Any key accepted by Mermaid's
-[gitGraph init options](https://mermaid.js.org/syntax/gitgraph.html#gitgraph-specific-configuration-options)
-can be supplied.
-
-### Data classes
-
-| Class | Fields |
-|---|---|
-| `NfProcess` | `name`, `containers`, `condas`, `templates`, `inputs`, `outputs` |
-| `NfWorkflow` | `name`, `calls` |
-| `NfInclude` | `path`, `imports` |
-| `ParsedPipeline` | `processes`, `workflows`, `includes`, `connections` |
-
----
-
 ## GitHub Action
 
 Add nf-mapper to any workflow to automatically generate a pipeline diagram
@@ -495,25 +412,31 @@ Then update each block independently:
 
 ## How it works
 
-1. **Parse** – The `.nf` file is tokenised and parsed with
-   [python-groovy-parser](https://github.com/inab/python-groovy-parser),
-   which implements a full Groovy 3 grammar using
-   [Pygments](https://pygments.org/) + [Lark](https://github.com/lark-parser/lark).
+1. **Parse** – The `.nf` file is parsed using the
+   [official Nextflow AST library](https://www.nextflow.io/docs/latest/developer/nextflow.ast.html)
+   (`io.nextflow:nf-lang`).  The `ScriptAstBuilder` produces a `ScriptNode` —
+   a `ModuleNode` subclass that exposes the Nextflow DSL constructs via clean
+   typed getters.
 
-2. **Extract** – The resulting AST is traversed to find:
-   - `process` declarations (with `container` / `conda` directives)
-   - `input:` and `output:` sections – string-literal `path(...)` patterns
-     (e.g. `"*.bam"`, `"*.html"`) are extracted as channel metadata
-   - `workflow` blocks (named and entry workflows, with `take:`/`main:`/`emit:` sections)
-   - `include` statements (including imported process names)
+2. **Extract** – The `ScriptNode` is interrogated to find:
+   - `process` blocks via `getProcesses()` — each `ProcessNode` has
+     pre-split `directives`, `inputs`, and `outputs` statements (no manual
+     label scanning needed).  Container, conda and template directives are
+     read directly from the directives block; string-literal `path(...)` patterns
+     (e.g. `"*.bam"`, `"*.html"`) are extracted from the inputs/outputs blocks.
+   - `workflow` blocks via `getWorkflows()` — each `WorkflowNode` has `takes`,
+     `main`, and `emits` statements; `isEntry()` identifies the unnamed entry workflow.
+   - `include` statements via `getIncludes()` — each `IncludeNode` holds the
+     source path and a list of `IncludeModuleNode` name/alias pairs.
    - **Process connections** inferred from `.out` channel references inside
-     workflow bodies (e.g. `SORT(ALIGN.out.bam)` → edge `ALIGN → SORT`)
+     workflow `main` blocks (e.g. `SORT(ALIGN.out.bam)` → edge `ALIGN → SORT`),
+     including references inside `if`/`while`/`for` blocks.
 
 3. **Render** – The connection graph is laid out as a `gitGraph`:
    - The **longest path** through the DAG becomes the `main` branch
    - Parallel paths (e.g. QC steps) become named branches; multiple off-nodes
      from the same main-path node each get their own branch
-   - Convergence points become `merge` commits (duplicate-free, bug-fixed)
+   - Convergence points become `merge` commits (duplicate-free)
    - Each process's output `path(...)` patterns become `type: HIGHLIGHT`
      commits tagged with the file extension
    - When a branch process uses a channel committed on a different branch,
@@ -529,33 +452,29 @@ Then update each block independently:
 
 ```bash
 git clone https://github.com/Skitionek/nf-mapper.git
-cd nf-mapper
-pip install -e ".[dev]"
+cd nf-mapper/nf-mapper-java
+mvn package -DskipTests
 ```
 
 ### Running tests
 
 ```bash
-pytest
+cd nf-mapper-java
+mvn test
 ```
 
-Tests use real nf-core pipeline files as fixtures:
+Tests use real nf-core pipeline files as fixtures in
+`nf-mapper-java/src/test/resources/fixtures/`:
 
 | Fixture | Source |
 |---|---|
-| `tests/fixtures/nf_core_fetchngs_sra.nf` | [nf-core/fetchngs](https://github.com/nf-core/fetchngs) `workflows/sra/main.nf` |
-| `tests/fixtures/nf_core_fastqc_module.nf` | [nf-core/modules](https://github.com/nf-core/modules) `modules/nf-core/fastqc/main.nf` |
-| `tests/fixtures/multi_arg_workflow.nf` | Synthetic – exercises multi-argument and zero-argument parenthesised call syntax (DSL2 / nf-core style) |
-
-### Linting
-
-```bash
-ruff check nf_mapper/ tests/
-```
+| `nf_core_fetchngs_sra.nf` | [nf-core/fetchngs](https://github.com/nf-core/fetchngs) `workflows/sra/main.nf` |
+| `nf_core_fastqc_module.nf` | [nf-core/modules](https://github.com/nf-core/modules) `modules/nf-core/fastqc/main.nf` |
+| `complex_workflow.nf` | Synthetic – exercises multi-argument and conditional-block call detection |
 
 ### CI
 
-GitHub Actions runs linting and the full test matrix (Python 3.10 / 3.11 / 3.12)
+GitHub Actions builds the Maven project and runs all tests (Java 17)
 on every push and pull request.  See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ---
@@ -568,7 +487,8 @@ nf-mapper is released under the **[MIT License](LICENSE)**.
 
 | Dependency | Licence |
 |---|---|
-| [groovy-parser](https://github.com/inab/python-groovy-parser) | Apache-2.0 |
-| [Lark](https://github.com/lark-parser/lark) | MIT |
+| [io.nextflow:nf-lang](https://github.com/nextflow-io/nextflow) | Apache-2.0 |
+| [org.apache.groovy:groovy](https://groovy-lang.org/) | Apache-2.0 |
+| [info.picocli:picocli](https://picocli.info/) | Apache-2.0 |
 | [nf-core/fetchngs](https://github.com/nf-core/fetchngs) *(test fixture)* | MIT |
 | [nf-core/modules](https://github.com/nf-core/modules) *(test fixture)* | MIT |

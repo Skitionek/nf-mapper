@@ -10,8 +10,18 @@ import static org.junit.jupiter.api.Assertions.*;
 class ParserTest {
 
     private static final NextflowParser PARSER = new NextflowParser();
-    private static final String FIXTURES_DIR =
-        Paths.get(System.getProperty("user.dir"), "..", "tests", "fixtures").normalize().toString();
+    private static final String FIXTURES_DIR;
+
+    static {
+        // Look for fixtures in the test classpath (src/test/resources/fixtures)
+        java.net.URL res = ParserTest.class.getResource("/fixtures");
+        if (res != null) {
+            FIXTURES_DIR = res.getPath();
+        } else {
+            // Fallback: relative path for IDE runs
+            FIXTURES_DIR = Paths.get(System.getProperty("user.dir"), "..", "tests", "fixtures").normalize().toString();
+        }
+    }
 
     private static String fixture(String name) {
         return FIXTURES_DIR + File.separator + name;

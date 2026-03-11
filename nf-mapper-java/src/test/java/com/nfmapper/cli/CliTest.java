@@ -7,8 +7,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CliTest {
 
-    private static final String FIXTURES_DIR =
-        Paths.get(System.getProperty("user.dir"), "..", "tests", "fixtures").normalize().toString();
+    private static final String FIXTURES_DIR;
+
+    static {
+        java.net.URL res = CliTest.class.getResource("/fixtures");
+        if (res != null) {
+            FIXTURES_DIR = res.getPath();
+        } else {
+            FIXTURES_DIR = Paths.get(System.getProperty("user.dir"), "..", "tests", "fixtures").normalize().toString();
+        }
+    }
 
     private static String fixture(String name) {
         return FIXTURES_DIR + File.separator + name;
