@@ -307,6 +307,19 @@ class TestNfCoreEndToEnd:
         assert 'commit id: "FASTQC"' in result
         assert "branch" not in result
 
+    def test_multi_arg_workflow_gitgraph(self):
+        """Multi-arg / zero-arg call fixture produces a non-empty gitGraph with correct nodes."""
+        pipeline = parse_nextflow_file(fixture_path("multi_arg_workflow.nf"))
+        result = pipeline_to_mermaid(pipeline, title="multi_arg_workflow")
+        assert "gitGraph" in result
+        # All four called processes must appear
+        for name in ("FASTQC", "TRIM_GALORE", "ALIGN", "MULTIQC"):
+            assert f'commit id: "{name}"' in result, f"{name} missing from diagram"
+        # TRIM_GALORE → ALIGN connection places them on same chain
+        idx_trim = result.index('commit id: "TRIM_GALORE"')
+        idx_align = result.index('commit id: "ALIGN"')
+        assert idx_trim < idx_align
+
 
 # ---------------------------------------------------------------------------
 # Channel nodes (HIGHLIGHT commits)

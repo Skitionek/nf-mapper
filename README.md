@@ -38,8 +38,18 @@ it easy to:
 ## Features
 
 - Parses real-world nf-core pipelines (tested against
-  [nf-core/fetchngs](https://github.com/nf-core/fetchngs) and
-  [nf-core/rnaseq](https://github.com/nf-core/rnaseq) modules)
+  [nf-core/fetchngs](https://github.com/nf-core/fetchngs),
+  [nf-core/rnaseq](https://github.com/nf-core/rnaseq) modules, and
+  [bigbio/quantms](https://github.com/bigbio/quantms))
+- **Full DSL2 call-style support** – detects process/workflow calls regardless
+  of whether they use bare single-argument syntax (`PROCESS reads`),
+  single-argument parenthesised syntax (`PROCESS(reads)`), multi-argument
+  syntax (`PROCESS(a, b, c)`), or zero-argument syntax (`PROCESS()`).
+  This covers the nf-core parenthesised style used throughout quantms and
+  similar pipelines.
+- **Locally-defined sub-workflow calls** – when a pipeline defines a named
+  `workflow FOO { … }` and then calls `FOO()` from the entry workflow, the
+  call is now correctly detected and rendered.
 - Extracts **processes**, **workflows**, **includes** and infers
   **process connections** from `.out` channel references
 - Parses **`input:`/`output:`** sections to extract `path(...)` channel
@@ -242,6 +252,7 @@ title: nf-core/fetchngs SRA
 gitGraph LR:
    checkout main
    commit id: "SRA_IDS_TO_RUNINFO"
+   commit id: "SRA_RUNINFO_TO_FTP"
    branch branch_1
    checkout branch_1
    commit id: "ASPERA_CLI"
@@ -252,15 +263,10 @@ gitGraph LR:
    checkout main
    branch branch_3
    checkout branch_3
+   commit id: "SRA_FASTQ_FTP"
+   checkout main
    commit id: "SRA_TO_SAMPLESHEET"
    commit id: "MULTIQC_MAPPINGS_CONFIG"
-   checkout main
-   branch branch_4
-   checkout branch_4
-   commit id: "MULTIQC_MAPPINGS_CONFIG"
-   checkout main
-   commit id: "SRA_RUNINFO_TO_FTP"
-   commit id: "SRA_FASTQ_FTP"
 ```
 <!-- /nf-mapper:example-fetchngs -->
 
@@ -539,6 +545,7 @@ Tests use real nf-core pipeline files as fixtures:
 |---|---|
 | `tests/fixtures/nf_core_fetchngs_sra.nf` | [nf-core/fetchngs](https://github.com/nf-core/fetchngs) `workflows/sra/main.nf` |
 | `tests/fixtures/nf_core_fastqc_module.nf` | [nf-core/modules](https://github.com/nf-core/modules) `modules/nf-core/fastqc/main.nf` |
+| `tests/fixtures/multi_arg_workflow.nf` | Synthetic – exercises multi-argument and zero-argument parenthesised call syntax (DSL2 / nf-core style) |
 
 ### Linting
 
