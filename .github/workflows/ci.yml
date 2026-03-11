@@ -24,5 +24,5 @@ jobs:
           cache: "maven"
 
       - name: Build and run tests
-        working-directory: nf-mapper-java
+        working-directory: nf-mapper
         run: mvn verify -q

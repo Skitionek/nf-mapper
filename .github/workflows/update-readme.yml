@@ -12,11 +12,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "nf-mapper-java/**"
+      - "nf-mapper/**"
       - "tests/fixtures/**"
   pull_request:
     paths:
-      - "nf-mapper-java/**"
+      - "nf-mapper/**"
       - "tests/fixtures/**"
 
 permissions:
@@ -40,11 +40,11 @@ jobs:
           cache: "maven"
 
       - name: Build nf-mapper jar
-        working-directory: nf-mapper-java
+        working-directory: nf-mapper
         run: mvn package -DskipTests -q
 
       - name: Regenerate all README examples
-        run: java -jar nf-mapper-java/target/nf-mapper-java-1.0.0.jar --regenerate README.md
+        run: java -jar nf-mapper/target/nf-mapper-1.0.0.jar --regenerate README.md
 
       - name: Commit updated examples
         if: |

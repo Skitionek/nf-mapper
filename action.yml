@@ -53,8 +53,8 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
-        mvn -f nf-mapper-java/pom.xml package -DskipTests -q
-        echo "NF_MAPPER_JAR=${{ github.action_path }}/nf-mapper-java/target/nf-mapper-java-1.0.0.jar" >> "$GITHUB_ENV"
+        mvn -f nf-mapper/pom.xml package -DskipTests -q
+        echo "NF_MAPPER_JAR=${{ github.action_path }}/nf-mapper/target/nf-mapper-1.0.0.jar" >> "$GITHUB_ENV"
 
     - name: Generate diagram
       id: generate

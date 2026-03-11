@@ -83,9 +83,9 @@ docker pull ghcr.io/skitionek/nf-mapper:main
 
 ```bash
 git clone https://github.com/Skitionek/nf-mapper.git
-cd nf-mapper/nf-mapper-java
+cd nf-mapper/nf-mapper
 mvn package -DskipTests
-# Produces: target/nf-mapper-java-1.0.0.jar
+# Produces: target/nf-mapper-1.0.0.jar
 ```
 
 ---
@@ -96,7 +96,7 @@ mvn package -DskipTests
 
 ```bash
 # Print diagram to stdout (fat JAR)
-java -jar nf-mapper-java/target/nf-mapper-java-1.0.0.jar workflow.nf
+java -jar nf-mapper/target/nf-mapper-1.0.0.jar workflow.nf
 
 # Add a title and wrap in a Markdown fenced block
 java -jar nf-mapper.jar workflow.nf --title "My Pipeline" --format md
@@ -452,19 +452,19 @@ Then update each block independently:
 
 ```bash
 git clone https://github.com/Skitionek/nf-mapper.git
-cd nf-mapper/nf-mapper-java
+cd nf-mapper/nf-mapper
 mvn package -DskipTests
 ```
 
 ### Running tests
 
 ```bash
-cd nf-mapper-java
+cd nf-mapper
 mvn test
 ```
 
 Tests use real nf-core pipeline files as fixtures in
-`nf-mapper-java/src/test/resources/fixtures/`:
+`nf-mapper/src/test/resources/fixtures/`:
 
 | Fixture | Source |
 |---|---|
