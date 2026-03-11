@@ -190,57 +190,108 @@ public class NextflowParser {
                                                List<String[]> connections) {
         if (!(closure.getCode() instanceof BlockStatement body)) return new NfWorkflow(name, Collections.emptyList());
 
-        // Build channel variable map (two passes for transitivity)
+        // Build channel variable map (two passes for transitivity).
+        // Each pass visits ALL statements recursively (including those inside if/else blocks).
         Map<String, String> channelVarMap = new LinkedHashMap<>();
-        buildChannelVarMap(body.getStatements(), knownProcesses, channelVarMap);
-        buildChannelVarMap(body.getStatements(), knownProcesses, channelVarMap);
+        buildChannelVarMapRecursive(body, knownProcesses, channelVarMap);
+        buildChannelVarMapRecursive(body, knownProcesses, channelVarMap);
 
         List<String> calls = new ArrayList<>();
-        String currentSection = null;
 
-        for (Statement stmt : body.getStatements()) {
-            String label = getStatementLabel(stmt);
-            if (label != null && !label.isEmpty()) {
-                currentSection = label;
+        // Detect section labels on the top-level statements, then recurse into nested blocks
+        // while staying in "main" context (or no-section context).
+        visitWorkflowStatements(body, null, knownProcesses, channelVarMap, calls, connections);
+
+        return new NfWorkflow(name, calls);
+    }
+
+    /**
+     * Recursively visit statements in a workflow body block.
+     * Tracks section labels on top-level statements; recurses into if/else and other
+     * nested block constructs so that process calls inside conditional blocks are captured.
+     */
+    private void visitWorkflowStatements(Statement stmt, String currentSection,
+                                          Set<String> knownProcesses,
+                                          Map<String, String> channelVarMap,
+                                          List<String> calls, List<String[]> connections) {
+        if (stmt == null) return;
+
+        if (stmt instanceof BlockStatement bs) {
+            String section = currentSection;
+            for (Statement child : bs.getStatements()) {
+                String label = getStatementLabel(child);
+                if (label != null && !label.isEmpty()) {
+                    section = label;
+                }
+                visitWorkflowStatements(child, section, knownProcesses, channelVarMap, calls, connections);
             }
+            return;
+        }
 
-            // Process calls visible in main or no-section context
-            boolean inMain = currentSection == null || "main".equals(currentSection);
-            if (!inMain) continue;
+        if (stmt instanceof IfStatement is) {
+            // Recurse into if-block and (optional) else-block; inherit current section
+            visitWorkflowStatements(is.getIfBlock(), currentSection, knownProcesses, channelVarMap, calls, connections);
+            visitWorkflowStatements(is.getElseBlock(), currentSection, knownProcesses, channelVarMap, calls, connections);
+            return;
+        }
 
-            if (!(stmt instanceof ExpressionStatement es)) continue;
-            Expression expr = es.getExpression();
+        if (stmt instanceof WhileStatement ws) {
+            visitWorkflowStatements(ws.getLoopBlock(), currentSection, knownProcesses, channelVarMap, calls, connections);
+            return;
+        }
 
-            if (expr instanceof MethodCallExpression mce) {
-                String method = mce.getMethodAsString();
-                if (method != null && knownProcesses.contains(method)) {
-                    if (!calls.contains(method)) calls.add(method);
-                    // Detect connections from process.out references in args
-                    List<Expression> callArgs = getArgs(mce);
-                    Set<String> outRefs = new LinkedHashSet<>();
-                    for (Expression arg : callArgs) {
-                        collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
-                    }
-                    for (String src : outRefs) {
-                        connections.add(new String[]{src, method});
-                    }
+        if (stmt instanceof ForStatement fs) {
+            visitWorkflowStatements(fs.getLoopBlock(), currentSection, knownProcesses, channelVarMap, calls, connections);
+            return;
+        }
+
+        // Only process calls in "main" or un-sectioned contexts
+        boolean inMain = currentSection == null || "main".equals(currentSection);
+        if (!inMain) return;
+
+        if (!(stmt instanceof ExpressionStatement es)) return;
+        Expression expr = es.getExpression();
+
+        if (expr instanceof MethodCallExpression mce) {
+            String method = mce.getMethodAsString();
+            if (method != null && knownProcesses.contains(method)) {
+                if (!calls.contains(method)) calls.add(method);
+                // Detect connections from process.out references in args
+                Set<String> outRefs = new LinkedHashSet<>();
+                for (Expression arg : getArgs(mce)) {
+                    collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
+                }
+                for (String src : outRefs) {
+                    connections.add(new String[]{src, method});
                 }
             }
         }
-
-        return new NfWorkflow(name, calls);
     }
 
     // -------------------------------------------------------------------------
     // Channel variable map building
     // -------------------------------------------------------------------------
 
-    private void buildChannelVarMap(List<Statement> stmts, Set<String> knownProcesses,
-                                     Map<String, String> channelVarMap) {
-        for (Statement stmt : stmts) {
-            if (!(stmt instanceof ExpressionStatement es)) continue;
-            Expression expr = es.getExpression();
-            scanForChannelAssignments(expr, knownProcesses, channelVarMap);
+    /**
+     * Recursively scan all statements (including those inside if/else/for/while blocks)
+     * and record channel variable assignments into {@code channelVarMap}.
+     */
+    private void buildChannelVarMapRecursive(Statement stmt, Set<String> knownProcesses,
+                                              Map<String, String> channelVarMap) {
+        if (stmt == null) return;
+        if (stmt instanceof BlockStatement bs) {
+            for (Statement child : bs.getStatements()) {
+                buildChannelVarMapRecursive(child, knownProcesses, channelVarMap);
+            }
+        } else if (stmt instanceof IfStatement is) {
+            buildChannelVarMapRecursive(is.getIfBlock(), knownProcesses, channelVarMap);
+            buildChannelVarMapRecursive(is.getElseBlock(), knownProcesses, channelVarMap);
+        } else if (stmt instanceof WhileStatement ws) {
+            buildChannelVarMapRecursive(ws.getLoopBlock(), knownProcesses, channelVarMap);
+        } else if (stmt instanceof ForStatement fs) {
+            buildChannelVarMapRecursive(fs.getLoopBlock(), knownProcesses, channelVarMap);
+        } else if (stmt instanceof ExpressionStatement es) {
+            scanForChannelAssignments(es.getExpression(), knownProcesses, channelVarMap);
         }
     }
 
