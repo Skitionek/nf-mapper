@@ -54,7 +54,7 @@ it easy to:
   each placed on their own branch instead of a linear sequence
 - Fixed **branch-merge logic**: branches no longer duplicate fast-forwarded
   nodes; multiple branches off the same node are all handled correctly
-- Available as a **Python package**, a **CLI tool** and a **GitHub Action**
+- Available as a **Python package**, a **CLI tool**, a **Docker image** and a **GitHub Action**
 
 ---
 
@@ -71,6 +71,16 @@ pip install git+https://github.com/Skitionek/nf-mapper.git
 ```
 
 **Requirements:** Python ≥ 3.10
+
+### Docker
+
+A pre-built Docker image is published to the
+[GitHub Container Registry](https://ghcr.io/skitionek/nf-mapper) on every push
+to `main` and for every version tag:
+
+```bash
+docker pull ghcr.io/skitionek/nf-mapper:main
+```
 
 ---
 
@@ -97,6 +107,28 @@ nf-mapper workflow.nf --update README.md --format md
 # Update one of several named blocks in the same file
 nf-mapper workflow.nf --update README.md --marker my-pipeline --format md
 ```
+
+### Docker
+
+Run nf-mapper without installing Python, by mounting the directory that
+contains your `.nf` file(s) into the container:
+
+```bash
+# Print diagram to stdout
+docker run --rm -v "$(pwd):/data" ghcr.io/skitionek/nf-mapper:main /data/workflow.nf
+
+# Save diagram to a file (the output file is written inside the mounted volume)
+docker run --rm -v "$(pwd):/data" ghcr.io/skitionek/nf-mapper:main \
+  /data/workflow.nf --title "My Pipeline" --format md -o /data/diagram.md
+
+# Update an existing Markdown file in-place
+docker run --rm -v "$(pwd):/data" ghcr.io/skitionek/nf-mapper:main \
+  /data/workflow.nf --update /data/README.md --format md
+```
+
+The image tag `main` tracks the latest commit on the default branch.
+Version-pinned tags (e.g. `ghcr.io/skitionek/nf-mapper:1.2.3`) are published
+for every release.
 
 ### Python API
 
