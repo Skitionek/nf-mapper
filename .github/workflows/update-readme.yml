@@ -13,11 +13,9 @@ on:
     branches: [main]
     paths:
       - "nf-mapper/**"
-      - "tests/fixtures/**"
   pull_request:
     paths:
       - "nf-mapper/**"
-      - "tests/fixtures/**"
 
 permissions:
   contents: write
