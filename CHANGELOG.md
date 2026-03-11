@@ -8,6 +8,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-argument and zero-argument parenthesised calls now detected** –
+  the Groovy parser represents `PROCESS(a, b)` and `PROCESS()` as
+  `path_expression` AST nodes rather than `command_expression` nodes.
+  Both `_is_process_call` and the `_visit` traversal now handle both AST
+  forms, so calls such as `TMT(ch_fileprep_result.iso, ch_expdesign,
+  ch_db)` are correctly extracted as process calls and their `PROCESS.out`
+  references are used to build connections.  Previously only single-argument
+  bare-identifier calls (e.g. `PROCESS reads`) were detected, causing
+  pipelines like [bigbio/quantms](https://github.com/bigbio/quantms) —
+  which use the parenthesised nf-core call style throughout — to produce
+  empty diagrams.
+
+- **Locally-defined workflow names registered as known identifiers** –
+  after a named `workflow FOO { … }` is extracted, `FOO` is now added to
+  the set of known process/workflow names.  This allows a subsequent entry
+  workflow (`workflow { … }`) that calls `FOO()` to detect and record that
+  call.  Previously the entry workflow silently skipped calls to any
+  workflow defined in the same file.
+
 ### Added
 
 - **Channel nodes** – each process's `output: path("*.ext")` patterns are now

@@ -553,14 +553,27 @@ def _get_first_cap_identifier(node: dict) -> str | None:
 
 def _is_process_call(cmd_node: dict, known_processes: set[str]) -> str | None:
     """
-    Return the process name if *cmd_node* is a command_expression calling a known
-    process, otherwise None.
+    Return the process name if *cmd_node* is a call to a known process/workflow,
+    otherwise None.
 
-    Only matches *bare* process calls (``PROCESS_NAME(args)``).  Method chains
-    such as ``PROCESS.out.channel.map{}.set{}`` are intentionally excluded.
+    Handles two AST representations produced by the Groovy parser:
+
+    1. **command_expression** – Groovy command-method syntax with a single
+       bare argument, e.g. ``PROCESS reads`` or ``PROCESS(reads)``.
+       The parser emits this as a ``command_expression`` whose first child is
+       the callee identifier.
+
+    2. **path_expression** – parenthesised call with zero *or* multiple
+       arguments, e.g. ``PROCESS()`` or ``PROCESS(a, b, c)``.
+       The parser emits this as a ``path_expression`` whose first child is the
+       callee identifier and whose second child is an ``arguments`` path element.
+       This representation is produced for every multi-argument call *and* for
+       empty-argument calls (``PROCESS()`` / ``PROCESS ()``).
+
+    Method chains such as ``PROCESS.out.channel.map{}.set{}`` are intentionally
+    excluded: in those nodes the second child is a ``path_element`` that does
+    **not** end with ``arguments``.
     """
-    if not _rule_ends_with(cmd_node, ["command_expression"]):
-        return None
     children = cmd_node.get("children", [])
     if not children:
         return None
@@ -568,14 +581,27 @@ def _is_process_call(cmd_node: dict, known_processes: set[str]) -> str | None:
     # The callee must be a bare primary/identifier (no additional path elements).
     # PRE_IDENTIFIER_NAME matches are path-expression chains (e.g. PROC.out.method)
     # and must NOT be treated as process calls.
-    if _rule_ends_with(first, IDENTIFIER_RULE):
-        name = None
-        for ltype, lval in _iter_leaves(first):
-            if ltype == "CAPITALIZED_IDENTIFIER":
-                name = lval
-                break
-        if name and name in known_processes:
+    if not _rule_ends_with(first, IDENTIFIER_RULE):
+        return None
+    name = None
+    for ltype, lval in _iter_leaves(first):
+        if ltype == "CAPITALIZED_IDENTIFIER":
+            name = lval
+            break
+    if not name or name not in known_processes:
+        return None
+
+    if _rule_ends_with(cmd_node, ["command_expression"]):
+        # Single-argument Groovy command syntax: PROCESS arg
+        return name
+
+    if _rule_ends_with(cmd_node, ["path_expression"]) and len(children) > 1:
+        # Multi-arg or empty-arg parenthesised call: PROCESS(a, b) / PROCESS()
+        # Reject method chains where the next element is NOT an arguments node
+        # (e.g. PROCESS.out.channel would have a plain path_element here).
+        if _rule_ends_with(children[1], ["arguments"]):
             return name
+
     return None
 
 
@@ -618,9 +644,14 @@ def _extract_workflow_body(
                         _visit(body_node, section_name)
                     return
 
-        # In the 'main' section (or unnamed workflow), look for process calls
+        # In the 'main' section (or unnamed workflow), look for process calls.
+        # The Groovy parser produces either a command_expression (single bare
+        # arg) or a path_expression (multi-arg / empty-arg parenthesised call).
         in_main = current_section in ("main", None)
-        if in_main and _rule_ends_with(node, ["command_expression"]):
+        if in_main and (
+            _rule_ends_with(node, ["command_expression"])
+            or _rule_ends_with(node, ["path_expression"])
+        ):
             proc_name = _is_process_call(node, known_processes)
             if proc_name:
                 calls.append(proc_name)
@@ -743,6 +774,10 @@ def _extract_features(
                         )
                         workflows.append(wf)
                         connections.extend(wf_conns)
+                        # Register the workflow name so later code in the same
+                        # file (e.g. an entry workflow) can detect calls to it.
+                        if wf.name:
+                            known_processes.add(wf.name)
                         unprocessed = False
                     elif sentinel == INCLUDE_CHILD:
                         incs = _extract_includes(c_children)

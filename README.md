@@ -38,8 +38,18 @@ it easy to:
 ## Features
 
 - Parses real-world nf-core pipelines (tested against
-  [nf-core/fetchngs](https://github.com/nf-core/fetchngs) and
-  [nf-core/rnaseq](https://github.com/nf-core/rnaseq) modules)
+  [nf-core/fetchngs](https://github.com/nf-core/fetchngs),
+  [nf-core/rnaseq](https://github.com/nf-core/rnaseq) modules, and
+  [bigbio/quantms](https://github.com/bigbio/quantms))
+- **Full DSL2 call-style support** – detects process/workflow calls regardless
+  of whether they use bare single-argument syntax (`PROCESS reads`),
+  single-argument parenthesised syntax (`PROCESS(reads)`), multi-argument
+  syntax (`PROCESS(a, b, c)`), or zero-argument syntax (`PROCESS()`).
+  This covers the nf-core parenthesised style used throughout quantms and
+  similar pipelines.
+- **Locally-defined sub-workflow calls** – when a pipeline defines a named
+  `workflow FOO { … }` and then calls `FOO()` from the entry workflow, the
+  call is now correctly detected and rendered.
 - Extracts **processes**, **workflows**, **includes** and infers
   **process connections** from `.out` channel references
 - Parses **`input:`/`output:`** sections to extract `path(...)` channel
@@ -539,6 +549,7 @@ Tests use real nf-core pipeline files as fixtures:
 |---|---|
 | `tests/fixtures/nf_core_fetchngs_sra.nf` | [nf-core/fetchngs](https://github.com/nf-core/fetchngs) `workflows/sra/main.nf` |
 | `tests/fixtures/nf_core_fastqc_module.nf` | [nf-core/modules](https://github.com/nf-core/modules) `modules/nf-core/fastqc/main.nf` |
+| `tests/fixtures/multi_arg_workflow.nf` | Synthetic – exercises multi-argument and zero-argument parenthesised call syntax (DSL2 / nf-core style) |
 
 ### Linting
 

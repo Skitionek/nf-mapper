@@ -103,6 +103,73 @@ class TestParseNextflowContent:
         result = parse_nextflow_content(content)
         assert ("ALIGN", "SORT") in result.connections
 
+    def test_multi_arg_call_detected(self):
+        """Parenthesised multi-arg calls PROCESS(a, b) are detected (path_expression form)."""
+        content = """
+        process TRIM  { script: 'trim' }
+        process ALIGN { script: 'align' }
+        workflow {
+            main:
+            TRIM(params.reads, params.adapter)
+            ALIGN(TRIM.out.trimmed, params.genome)
+        }
+        """
+        result = parse_nextflow_content(content)
+        calls_flat = [c for wf in result.workflows for c in wf.calls]
+        assert "TRIM" in calls_flat
+        assert "ALIGN" in calls_flat
+
+    def test_multi_arg_connection_detected(self):
+        """Connection is inferred when a process.out ref appears inside multi-arg parens."""
+        content = """
+        process TRIM  { script: 'trim' }
+        process ALIGN { script: 'align' }
+        workflow {
+            main:
+            TRIM(params.reads, params.adapter)
+            ALIGN(TRIM.out.trimmed, params.genome)
+        }
+        """
+        result = parse_nextflow_content(content)
+        assert ("TRIM", "ALIGN") in result.connections
+
+    def test_empty_paren_call_detected(self):
+        """Zero-argument calls PROCESS() and PROCESS () are detected (path_expression form)."""
+        content = """
+        include { SUB } from './sub'
+        workflow {
+            main:
+            SUB()
+        }
+        """
+        result = parse_nextflow_content(content)
+        calls_flat = [c for wf in result.workflows for c in wf.calls]
+        assert "SUB" in calls_flat
+
+    def test_local_workflow_call_in_entry_workflow(self):
+        """A locally-defined named workflow can be called from the entry workflow."""
+        content = """
+        include { PROC_A } from './proc_a'
+        include { PROC_B } from './proc_b'
+        workflow INNER {
+            main:
+            PROC_A()
+            PROC_B(PROC_A.out.result)
+        }
+        workflow {
+            main:
+            INNER()
+        }
+        """
+        result = parse_nextflow_content(content)
+        # INNER is defined locally so its calls should be captured
+        inner_wf = next(w for w in result.workflows if w.name == "INNER")
+        assert "PROC_A" in inner_wf.calls
+        assert "PROC_B" in inner_wf.calls
+        # Entry workflow should detect the INNER call
+        entry_wf = next(w for w in result.workflows if w.name is None)
+        assert "INNER" in entry_wf.calls
+
 
 # ---------------------------------------------------------------------------
 # Handcrafted fixtures – parse_nextflow_file
@@ -165,6 +232,43 @@ class TestHandcraftedFixtures:
     def test_file_not_found(self):
         with pytest.raises(FileNotFoundError):
             parse_nextflow_file("/nonexistent/pipeline.nf")
+
+    # ------------------------------------------------------------------
+    # multi_arg_workflow.nf – parenthesised multi-arg / zero-arg calls
+    # ------------------------------------------------------------------
+
+    def test_multi_arg_workflow_processes(self):
+        """Locally defined processes are extracted from the multi-arg fixture."""
+        pipeline = parse_nextflow_file(fixture_path("multi_arg_workflow.nf"))
+        names = [p.name for p in pipeline.processes]
+        assert "ALIGN" in names
+        assert "MULTIQC" in names
+
+    def test_multi_arg_workflow_includes(self):
+        """include imports are extracted from the multi-arg fixture."""
+        pipeline = parse_nextflow_file(fixture_path("multi_arg_workflow.nf"))
+        imports_flat = [n for inc in pipeline.includes for n in inc.imports]
+        assert "FASTQC" in imports_flat
+        assert "TRIM_GALORE" in imports_flat
+
+    def test_multi_arg_workflow_named_workflow_calls(self):
+        """Multi-arg and zero-arg calls inside a named workflow are all captured."""
+        pipeline = parse_nextflow_file(fixture_path("multi_arg_workflow.nf"))
+        named = next(w for w in pipeline.workflows if w.name == "PIPELINE")
+        for expected in ("FASTQC", "TRIM_GALORE", "ALIGN", "MULTIQC"):
+            assert expected in named.calls, f"{expected} not found in PIPELINE calls"
+
+    def test_multi_arg_workflow_entry_workflow_calls_inner(self):
+        """The entry workflow detects the zero-arg PIPELINE() call."""
+        pipeline = parse_nextflow_file(fixture_path("multi_arg_workflow.nf"))
+        entry = next(w for w in pipeline.workflows if w.name is None)
+        assert "PIPELINE" in entry.calls
+
+    def test_multi_arg_workflow_connections(self):
+        """Connections are inferred from PROCESS.out references inside multi-arg calls."""
+        pipeline = parse_nextflow_file(fixture_path("multi_arg_workflow.nf"))
+        assert ("TRIM_GALORE", "ALIGN") in pipeline.connections
+        assert ("ALIGN", "MULTIQC") in pipeline.connections
 
 
 # ---------------------------------------------------------------------------
