@@ -220,6 +220,16 @@ def _render_flat(lines: list[str], pipeline: ParsedPipeline) -> None:
     # Include imported names
     for inc in pipeline.includes:
         all_process_names.update(inc.imports)
+    # Include locally-defined named workflow names that are called from another
+    # workflow so that entry-workflow calls like ``BIGBIO_QUANTMS()`` are not
+    # silently dropped just because the target is a workflow rather than an
+    # imported process.
+    called_names: set[str] = set()
+    for wf in pipeline.workflows:
+        called_names.update(wf.calls)
+    for wf in pipeline.workflows:
+        if wf.name and wf.name in called_names:
+            all_process_names.add(wf.name)
 
     for wf in pipeline.workflows:
         for call in wf.calls:
@@ -291,6 +301,14 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
         nodes.add(proc.name)
     for inc in pipeline.includes:
         nodes.update(inc.imports)
+    # Include locally-defined named workflow names that are called from another
+    # workflow (same rationale as in _render_flat).
+    called_names: set[str] = set()
+    for wf in pipeline.workflows:
+        called_names.update(wf.calls)
+    for wf in pipeline.workflows:
+        if wf.name and wf.name in called_names:
+            nodes.add(wf.name)
     for src, dst in pipeline.connections:
         nodes.update([src, dst])
         successors[src].append(dst)
@@ -355,6 +373,9 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
             )
             emitted.add(node)
         for off_node in branch_hang.get(node, []):
+            if off_node in emitted:
+                # Already emitted as part of a previous off-chain; skip.
+                continue
             bname = next_branch()
             lines.append(f"   branch {bname}")
             lines.append(f"   checkout {bname}")
@@ -363,6 +384,7 @@ def _render_dag(lines: list[str], pipeline: ParsedPipeline) -> None:
             _emit_off_chain_with_channels(
                 lines, off_node, main_set, successors,
                 predecessors, proc_lookup, channel_branch, current_branch,
+                emitted,
             )
 
             # Merge back if the off-chain leads to a main-path node
@@ -465,18 +487,25 @@ def _emit_off_chain_with_channels(
     proc_lookup: dict[str, NfProcess],
     channel_branch: dict[str, str],
     current_branch: str,
+    emitted: set[str] | None = None,
 ) -> None:
     """Emit commits for an off-main chain beginning at *start*.
 
-    Stops at main-path nodes.  For each node, cherry-picks any predecessor
-    output channels that were committed on a different branch, then emits the
-    process commit and its own output channels.
+    Stops at main-path nodes or at nodes that have already been emitted on
+    another branch (tracked via the shared *emitted* set).  For each node,
+    cherry-picks any predecessor output channels that were committed on a
+    different branch, then emits the process commit and its own output
+    channels.
     """
     cur: str | None = start
     while cur is not None:
+        if emitted is not None and cur in emitted:
+            break
         _emit_node_with_channels(
             lines, cur, proc_lookup, predecessors, channel_branch, current_branch
         )
+        if emitted is not None:
+            emitted.add(cur)
         off_succs = [s for s in successors[cur] if s not in main_set]
         cur = off_succs[0] if off_succs else None
 

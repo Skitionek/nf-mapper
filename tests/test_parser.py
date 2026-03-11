@@ -360,6 +360,148 @@ class TestNfCoreFixtures:
 
 
 # ---------------------------------------------------------------------------
+# Include alias parsing (include { X as Y } should register Y, not X)
+# ---------------------------------------------------------------------------
+
+
+class TestIncludeAlias:
+    """Tests for the ``include { X as Y }`` alias syntax."""
+
+    def test_alias_registers_alias_not_original(self):
+        """``include { ORIG as ALIAS }`` must register only ALIAS."""
+        content = """
+        include { PMULTIQC as SUMMARY_PIPELINE } from '../modules/pmultiqc'
+        workflow W {
+            main:
+            SUMMARY_PIPELINE(params.input)
+        }
+        """
+        result = parse_nextflow_content(content)
+        imports = result.includes[0].imports
+        assert "SUMMARY_PIPELINE" in imports
+        assert "PMULTIQC" not in imports
+
+    def test_mixed_alias_and_plain(self):
+        """A block with both plain and aliased imports extracts the right names."""
+        content = """
+        include { FASTQC; TRIMGALORE as TRIM } from './modules'
+        """
+        result = parse_nextflow_content(content)
+        imports = result.includes[0].imports
+        assert "FASTQC" in imports
+        assert "TRIM" in imports
+        assert "TRIMGALORE" not in imports
+
+    def test_alias_not_creating_ghost_node(self):
+        """The original name (before ``as``) must not appear as a diagram node."""
+        from nf_mapper.mermaid import pipeline_to_mermaid
+
+        content = """
+        include { PMULTIQC as SUMMARY_PIPELINE } from '../modules/pmultiqc'
+        workflow QUANTMS {
+            main:
+            SUMMARY_PIPELINE(params.input)
+        }
+        """
+        result = parse_nextflow_content(content)
+        diagram = pipeline_to_mermaid(result)
+        assert "SUMMARY_PIPELINE" in diagram
+        assert "PMULTIQC" not in diagram
+
+
+# ---------------------------------------------------------------------------
+# Recursive include resolution (parse_nextflow_file follows relative paths)
+# ---------------------------------------------------------------------------
+
+
+class TestRecursiveIncludeResolution:
+    """Tests for recursive include parsing introduced to fix the quantms
+    'one node' issue (running on main.nf should expand included workflows)."""
+
+    def test_quantms_style_fixture_expands_subworkflow(self):
+        """Parsing quantms_style/main.nf should expand QUANTMS workflow calls."""
+        pipeline = parse_nextflow_file(
+            fixture_path("quantms_style/main.nf")
+        )
+        proc_names = {p.name for p in pipeline.processes}
+        # These are the process CALLS inside the QUANTMS sub-workflow
+        assert "INPUT_CHECK" in proc_names
+        assert "CREATE_INPUT_CHANNEL" in proc_names
+        assert "FILE_PREPARATION" in proc_names
+        assert "SUMMARY_PIPELINE" in proc_names
+
+    def test_quantms_style_fixture_quantms_not_isolated_node(self):
+        """QUANTMS (the wrapper) should not appear as a separate isolated node
+        when it was successfully expanded into its constituent processes."""
+        pipeline = parse_nextflow_file(
+            fixture_path("quantms_style/main.nf")
+        )
+        # QUANTMS should have been removed from includes once expanded
+        all_imports = {name for inc in pipeline.includes for name in inc.imports}
+        assert "QUANTMS" not in all_imports
+
+    def test_quantms_style_fixture_alias_not_in_imports(self):
+        """The PMULTIQC alias (registered as SUMMARY_PIPELINE) must not
+        appear as a ghost import in the sub-workflow's parsed includes."""
+        pipeline = parse_nextflow_file(
+            fixture_path("quantms_style/main.nf")
+        )
+        proc_names = {p.name for p in pipeline.processes}
+        # Only alias should be present
+        assert "SUMMARY_PIPELINE" in proc_names
+        assert "PMULTIQC" not in proc_names
+
+    def test_quantms_style_fixture_connections_merged(self):
+        """Connections from the included sub-workflow are merged into the
+        top-level pipeline."""
+        pipeline = parse_nextflow_file(
+            fixture_path("quantms_style/main.nf")
+        )
+        # quantms.nf produces INPUT_CHECK → CREATE_INPUT_CHANNEL
+        assert ("INPUT_CHECK", "CREATE_INPUT_CHANNEL") in pipeline.connections
+
+    def test_quantms_style_fixture_diagram_has_multiple_nodes(self):
+        """The diagram for main.nf must have substantially more than one node
+        once the sub-workflow is expanded."""
+        from nf_mapper.mermaid import pipeline_to_mermaid
+
+        pipeline = parse_nextflow_file(
+            fixture_path("quantms_style/main.nf")
+        )
+        diagram = pipeline_to_mermaid(pipeline)
+        process_commits = [
+            line for line in diagram.splitlines()
+            if "commit id:" in line and "HIGHLIGHT" not in line
+        ]
+        assert len(process_commits) > 3, (
+            f"Expected >3 nodes but got {len(process_commits)}: {process_commits}"
+        )
+
+    def test_missing_include_file_falls_back_gracefully(self):
+        """When an include path does not exist, parsing continues and the
+        import stays in the includes list unchanged."""
+        content = """
+        include { MISSING_PROC } from './does_not_exist'
+        workflow W {
+            main:
+            MISSING_PROC(params.input)
+        }
+        """
+        import os
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".nf", mode="w", delete=False) as f:
+            f.write(content)
+            tmp = f.name
+        try:
+            result = parse_nextflow_file(tmp)
+        finally:
+            os.unlink(tmp)
+        # The import should still be present (file wasn't found)
+        all_imports = {n for inc in result.includes for n in inc.imports}
+        assert "MISSING_PROC" in all_imports
+
+
+# ---------------------------------------------------------------------------
 # Data-class sanity checks
 # ---------------------------------------------------------------------------
 

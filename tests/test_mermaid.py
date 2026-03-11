@@ -614,3 +614,89 @@ class TestMergeLogic:
         assert result.count("branch ") == 2
         assert "QC1" in result
         assert "QC2" in result
+
+
+# ---------------------------------------------------------------------------
+# Local named-workflow visibility (Fix 2: quantms-style pipelines)
+# ---------------------------------------------------------------------------
+
+
+class TestLocalWorkflowNodeVisibility:
+    """Tests that locally-defined named workflows appear in the diagram when
+    they are called from the entry workflow, even when no connection edges
+    reference them directly."""
+
+    def test_called_local_workflow_appears_in_flat_mode(self):
+        """A named workflow called from the entry workflow appears as a node
+        in flat (no-connections) rendering."""
+        pipeline = _make_pipeline(
+            workflows=[
+                NfWorkflow(name="BIGBIO_QUANTMS", calls=["QUANTMS"]),
+                NfWorkflow(name=None, calls=["BIGBIO_QUANTMS"]),
+            ],
+            includes=[],
+            # No connections: force flat rendering
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert 'commit id: "BIGBIO_QUANTMS"' in result
+
+    def test_called_local_workflow_appears_in_dag_mode(self):
+        """A named workflow called from entry workflow appears as a node in
+        DAG rendering when connections exist between other nodes."""
+        from nf_mapper.parser import NfInclude
+
+        pipeline = _make_pipeline(
+            workflows=[
+                NfWorkflow(name="BIGBIO_QUANTMS", calls=["QUANTMS"]),
+                NfWorkflow(name=None, calls=["BIGBIO_QUANTMS", "PIPELINE_COMPLETION"]),
+            ],
+            includes=[
+                NfInclude(path="./workflows/quantms", imports=["QUANTMS"]),
+                NfInclude(path="./subworkflows/utils", imports=["PIPELINE_COMPLETION"]),
+            ],
+            connections=[("BIGBIO_QUANTMS", "PIPELINE_COMPLETION")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        assert 'commit id: "BIGBIO_QUANTMS"' in result
+        assert 'commit id: "PIPELINE_COMPLETION"' in result
+
+    def test_uncalled_workflow_not_added_as_extra_node(self):
+        """A named workflow that is NOT called from any other workflow must
+        not appear as an extra node (avoids inflating diagrams)."""
+        pipeline = _make_pipeline(
+            workflows=[
+                NfWorkflow(name="STANDALONE", calls=["PROC_A"]),
+            ],
+            processes=[NfProcess(name="PROC_A")],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        # Only PROC_A should be committed; STANDALONE is never called
+        assert 'commit id: "PROC_A"' in result
+        assert "STANDALONE" not in result
+
+    def test_one_node_quantms_minimal_becomes_two_nodes(self):
+        """The minimal quantms pattern (entry calls BIGBIO_QUANTMS which
+        calls the imported QUANTMS) must produce more than one node so the
+        user is not left with a single-commit diagram."""
+        from nf_mapper.parser import NfInclude
+
+        # Simulate: include { QUANTMS }; workflow BIGBIO_QUANTMS { QUANTMS() }
+        #           workflow { BIGBIO_QUANTMS() }
+        pipeline = _make_pipeline(
+            workflows=[
+                NfWorkflow(name="BIGBIO_QUANTMS", calls=["QUANTMS"]),
+                NfWorkflow(name=None, calls=["BIGBIO_QUANTMS"]),
+            ],
+            includes=[NfInclude(path="./workflows/quantms", imports=["QUANTMS"])],
+            connections=[],
+        )
+        result = pipeline_to_mermaid(pipeline)
+        process_commits = [
+            line for line in result.splitlines()
+            if "commit id:" in line and "HIGHLIGHT" not in line
+        ]
+        assert len(process_commits) >= 2, (
+            f"Expected >=2 nodes; got {len(process_commits)}: {process_commits}"
+        )
+        assert "QUANTMS" in result
+        assert "BIGBIO_QUANTMS" in result
