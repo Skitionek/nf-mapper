@@ -1,6 +1,6 @@
 # minimal_process
 
-> Generated from `tests/fixtures/minimal_process.nf`
+> Generated from `nf-mapper/src/test/resources/fixtures/minimal_process.nf`
 
 ```mermaid
 ---

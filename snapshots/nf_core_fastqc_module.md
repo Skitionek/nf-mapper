@@ -1,10 +1,10 @@
-# simple_workflow
+# nf_core_fastqc_module
 
-> Generated from `tests/fixtures/simple_workflow.nf`
+> Generated from `nf-mapper/src/test/resources/fixtures/nf_core_fastqc_module.nf`
 
 ```mermaid
 ---
-title: nf-core/rnaseq QC
+title: nf-core FASTQC module
 ---
 %%{init: {'gitGraph': {'showBranches': false, 'parallelCommits': true}} }%%
 gitGraph LR:
@@ -12,6 +12,4 @@ gitGraph LR:
    commit id: "FASTQC"
    commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "html"
    commit id: "FASTQC: *.zip" type: HIGHLIGHT tag: "zip"
-   commit id: "MULTIQC"
-   commit id: "MULTIQC: multiqc_report.html" type: HIGHLIGHT tag: "html"
 ```

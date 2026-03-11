@@ -1,6 +1,6 @@
 # complex_workflow
 
-> Generated from `tests/fixtures/complex_workflow.nf`
+> Generated from `nf-mapper/src/test/resources/fixtures/complex_workflow.nf`
 
 ```mermaid
 ---

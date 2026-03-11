@@ -43,14 +43,18 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Set up Java 17
+      uses: actions/setup-java@v4
       with:
-        python-version: "3.12"
+        distribution: "temurin"
+        java-version: "17"
 
-    - name: Install nf-mapper
+    - name: Build nf-mapper jar
       shell: bash
-      run: pip install --quiet 'nf-mapper @ ${{ github.action_path }}'
+      working-directory: ${{ github.action_path }}
+      run: |
+        mvn -f nf-mapper/pom.xml package -DskipTests -q
+        echo "NF_MAPPER_JAR=${{ github.action_path }}/nf-mapper/target/nf-mapper-1.0.0.jar" >> "$GITHUB_ENV"
 
     - name: Generate diagram
       id: generate
@@ -65,11 +69,11 @@ runs:
         fi
         if [ -n "${{ inputs.update }}" ]; then
           ARGS="${ARGS} --update '${{ inputs.update }}' --marker '${{ inputs.marker }}'"
-          eval nf-mapper ${ARGS}
+          eval java -jar "${NF_MAPPER_JAR}" ${ARGS}
           echo "diagram=${{ inputs.update }}" >> "$GITHUB_OUTPUT"
         else
           OUTPUT="${{ inputs.output }}"
           ARGS="${ARGS} -o ${OUTPUT}"
-          eval nf-mapper ${ARGS}
+          eval java -jar "${NF_MAPPER_JAR}" ${ARGS}
           echo "diagram=${OUTPUT}" >> "$GITHUB_OUTPUT"
         fi

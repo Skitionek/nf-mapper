@@ -7,46 +7,22 @@ on:
     branches: main
 
 jobs:
-  lint:
-    name: Lint
+  build-and-test:
+    name: Build and Test (Java 17)
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Run ruff
-        run: ruff check nf_mapper/ tests/
-
-  test:
-    name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          distribution: "temurin"
+          java-version: "17"
+          cache: "maven"
 
-      - name: Install package and test dependencies
-        run: |
-          pip install -e ".[dev]"
-
-      - name: Run tests
-        run: pytest
+      - name: Build and run tests
+        working-directory: nf-mapper
+        run: mvn verify -q
