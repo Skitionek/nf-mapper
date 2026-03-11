@@ -14,14 +14,24 @@
     </properties>
     <dependencies>
         <dependency>
+            <groupId>io.nextflow</groupId>
+            <artifactId>nf-lang</artifactId>
+            <version>25.04.4</version>
+        </dependency>
+        <dependency>
+            <groupId>me.sunlan</groupId>
+            <artifactId>antlr4-runtime</artifactId>
+            <version>4.13.2.6</version>
+        </dependency>
+        <dependency>
             <groupId>org.apache.groovy</groupId>
             <artifactId>groovy</artifactId>
-            <version>4.0.29</version>
+            <version>4.0.26</version>
         </dependency>
         <dependency>
             <groupId>org.apache.groovy</groupId>
             <artifactId>groovy-json</artifactId>
-            <version>4.0.29</version>
+            <version>4.0.26</version>
         </dependency>
         <dependency>
             <groupId>info.picocli</groupId>

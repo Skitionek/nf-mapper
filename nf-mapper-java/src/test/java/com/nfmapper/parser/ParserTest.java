@@ -30,13 +30,16 @@ class ParserTest {
     }
 
     @Test void testExtractsSingleProcess() {
-        ParsedPipeline p = PARSER.parseContent("process MY_PROCESS { script: 'echo hello' }");
+        ParsedPipeline p = PARSER.parseContent(
+            "process MY_PROCESS {\n    script:\n    'echo hello'\n}\n");
         assertEquals(1, p.getProcesses().size());
         assertEquals("MY_PROCESS", p.getProcesses().get(0).getName());
     }
 
     @Test void testExtractsMultipleProcesses() {
-        String content = "process STEP_ONE { script: 'echo one' }\nprocess STEP_TWO { script: 'echo two' }";
+        String content =
+            "process STEP_ONE {\n    script:\n    'echo one'\n}\n" +
+            "process STEP_TWO {\n    script:\n    'echo two'\n}\n";
         ParsedPipeline p = PARSER.parseContent(content);
         List<String> names = p.getProcesses().stream().map(NfProcess::getName).toList();
         assertTrue(names.contains("STEP_ONE"));
@@ -44,43 +47,51 @@ class ParserTest {
     }
 
     @Test void testExtractsContainer() {
-        String content = "process CONTAINERIZED { container 'ubuntu:22.04'\nscript: 'echo hi' }";
+        String content =
+            "process CONTAINERIZED {\n" +
+            "    container 'ubuntu:22.04'\n" +
+            "    script:\n" +
+            "    'echo hi'\n" +
+            "}\n";
         ParsedPipeline p = PARSER.parseContent(content);
         assertFalse(p.getProcesses().isEmpty());
         assertTrue(p.getProcesses().get(0).getContainers().contains("ubuntu:22.04"));
     }
 
     @Test void testExtractsConda() {
-        String content = "process CONDA_PROC { conda 'bioconda::samtools=1.15'\nscript: 'samtools --version' }";
+        String content =
+            "process CONDA_PROC {\n" +
+            "    conda 'bioconda::samtools=1.15'\n" +
+            "    script:\n" +
+            "    'samtools --version'\n" +
+            "}\n";
         ParsedPipeline p = PARSER.parseContent(content);
         assertFalse(p.getProcesses().isEmpty());
         assertTrue(p.getProcesses().get(0).getCondas().stream().anyMatch(c -> c.contains("samtools")));
     }
 
     @Test void testUnnamedWorkflowConnection() {
-        String content = """
-            process A { script: 'echo a' }
-            process B { script: 'echo b' }
-            workflow {
-                A(params.input)
-                B(A.out.result)
-            }
-            """;
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(A.out.result)\n" +
+            "}\n";
         ParsedPipeline p = PARSER.parseContent(content);
         assertTrue(containsConnection(p.getConnections(), "A", "B"));
     }
 
     @Test void testNamedWorkflowConnection() {
-        String content = """
-            process ALIGN { script: 'bwa mem' }
-            process SORT  { script: 'samtools sort' }
-            workflow MYFLOW {
-                take: reads
-                main:
-                    ALIGN(reads)
-                    SORT(ALIGN.out.bam)
-            }
-            """;
+        String content =
+            "process ALIGN {\n    script:\n    'bwa mem'\n}\n" +
+            "process SORT {\n    script:\n    'samtools sort'\n}\n" +
+            "workflow MYFLOW {\n" +
+            "    take: reads\n" +
+            "    main:\n" +
+            "        ALIGN(reads)\n" +
+            "        SORT(ALIGN.out.bam)\n" +
+            "}\n";
         ParsedPipeline p = PARSER.parseContent(content);
         assertTrue(containsConnection(p.getConnections(), "ALIGN", "SORT"));
     }

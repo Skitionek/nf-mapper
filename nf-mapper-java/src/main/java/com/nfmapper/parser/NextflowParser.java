@@ -1,6 +1,8 @@
 package com.nfmapper.parser;
 
 import com.nfmapper.model.*;
+import nextflow.script.ast.*;
+import nextflow.script.parser.ScriptAstBuilder;
 import org.codehaus.groovy.ast.*;
 import org.codehaus.groovy.ast.expr.*;
 import org.codehaus.groovy.ast.stmt.*;
@@ -10,7 +12,29 @@ import org.codehaus.groovy.syntax.Token;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.util.regex.Pattern;
 
+/**
+ * Parses Nextflow {@code .nf} files using the native Nextflow AST library
+ * ({@code io.nextflow:nf-lang}).
+ *
+ * <p>The Nextflow script parser ({@link ScriptAstBuilder}) builds a {@link ScriptNode}
+ * which is a {@link ModuleNode} subclass that exposes the Nextflow DSL constructs
+ * directly via typed getters:
+ *
+ * <ul>
+ *   <li>{@link ScriptNode#getProcesses()} – all {@link ProcessNode} instances, each with
+ *       pre-split {@code directives}, {@code inputs}, and {@code outputs} blocks.</li>
+ *   <li>{@link ScriptNode#getWorkflows()} – all {@link WorkflowNode} instances, each with
+ *       {@code takes}, {@code main}, and {@code emits} blocks; {@link WorkflowNode#isEntry()}
+ *       distinguishes the unnamed entry workflow.</li>
+ *   <li>{@link ScriptNode#getIncludes()} – all {@link IncludeNode} instances, each holding
+ *       the source path and a list of {@link IncludeModuleNode} name/alias pairs.</li>
+ * </ul>
+ *
+ * <p>This avoids manually walking the raw Groovy AST and is far more robust than
+ * pattern-matching on raw {@code MethodCallExpression} trees.
+ */
 public class NextflowParser {
 
     public ParsedPipeline parseFile(String filePath) throws IOException {
@@ -23,33 +47,20 @@ public class NextflowParser {
             return empty();
         }
 
-        // Tolerance set to max so the compiler continues parsing despite syntax errors
-        // that arise from Nextflow-specific DSL constructs not valid in pure Groovy
         CompilerConfiguration config = new CompilerConfiguration();
         config.setTolerance(Integer.MAX_VALUE);
-        CompilationUnit cu = new CompilationUnit(config);
-        SourceUnit su;
-        try {
-            su = cu.addSource("pipeline.nf", content);
-        } catch (Exception e) {
-            return empty();
-        }
-        try {
-            cu.compile(Phases.CONVERSION);
-        } catch (Exception ignored) {
-            // tolerance mode - continue with partial AST
-        }
+        SourceUnit sourceUnit = new SourceUnit(
+                "pipeline.nf", content, config, null, new ErrorCollector(config));
 
+        ScriptAstBuilder builder = new ScriptAstBuilder(sourceUnit);
         ModuleNode module;
         try {
-            module = su.getAST();
+            module = builder.buildAST();
         } catch (Exception e) {
             return empty();
         }
-        if (module == null) return empty();
 
-        BlockStatement block = module.getStatementBlock();
-        if (block == null) return empty();
+        if (!(module instanceof ScriptNode script)) return empty();
 
         List<NfProcess> processes = new ArrayList<>();
         List<NfWorkflow> workflows = new ArrayList<>();
@@ -57,239 +68,156 @@ public class NextflowParser {
         List<String[]> connections = new ArrayList<>();
         Set<String> knownProcesses = new LinkedHashSet<>();
 
-        for (Statement stmt : block.getStatements()) {
-            if (!(stmt instanceof ExpressionStatement es)) continue;
-            Expression expr = es.getExpression();
-            if (!(expr instanceof MethodCallExpression mce)) continue;
+        // --- Includes ---
+        for (IncludeNode inc : script.getIncludes()) {
+            String path = inc.source.getValue() instanceof String s ? s : String.valueOf(inc.source.getValue());
+            List<String> imports = new ArrayList<>();
+            for (IncludeModuleNode mod : inc.modules) {
+                // Use alias when present (that is what callers will use), but also track
+                // the original name so connections can be resolved correctly.
+                String effective = (mod.alias != null && !mod.alias.isEmpty()) ? mod.alias : mod.name;
+                imports.add(effective);
+                knownProcesses.add(effective);
+                // Also register the original name in knownProcesses for alias-less usage
+                if (mod.alias != null && !mod.alias.isEmpty()) {
+                    knownProcesses.add(mod.name);
+                }
+            }
+            includes.add(new NfInclude(path, imports));
+        }
 
-            String method = mce.getMethodAsString();
-            if ("process".equals(method)) {
-                NfProcess proc = extractProcess(mce);
-                if (proc != null) {
-                    processes.add(proc);
-                    knownProcesses.add(proc.getName());
-                }
-            } else if ("workflow".equals(method)) {
-                NfWorkflow wf = extractWorkflow(mce, knownProcesses, connections);
-                if (wf != null) {
-                    workflows.add(wf);
-                    if (wf.getName() != null) {
-                        knownProcesses.add(wf.getName());
-                    }
-                }
-            } else if ("from".equals(method)) {
-                NfInclude inc = extractInclude(mce);
-                if (inc != null) {
-                    includes.add(inc);
-                    knownProcesses.addAll(inc.getImports());
-                }
+        // --- Processes ---
+        for (ProcessNode proc : script.getProcesses()) {
+            NfProcess nfProc = extractProcess(proc);
+            processes.add(nfProc);
+            knownProcesses.add(nfProc.getName());
+        }
+
+        // --- Workflows ---
+        for (WorkflowNode wf : script.getWorkflows()) {
+            NfWorkflow nfWf = extractWorkflow(wf, knownProcesses, connections);
+            workflows.add(nfWf);
+            if (nfWf.getName() != null) {
+                knownProcesses.add(nfWf.getName());
             }
         }
 
-        // Deduplicate connections preserving order
-        List<String[]> uniqueConns = deduplicateConnections(connections);
-        return new ParsedPipeline(processes, workflows, includes, uniqueConns);
+        return new ParsedPipeline(processes, workflows, includes, deduplicateConnections(connections));
     }
 
     // -------------------------------------------------------------------------
     // Process extraction
     // -------------------------------------------------------------------------
 
-    private NfProcess extractProcess(MethodCallExpression processCall) {
-        // process NAME { body }
-        // → MCE("process", args=[MCE("NAME", args=[ClosureExpr])])
-        List<Expression> args = getArgs(processCall);
-        if (args.isEmpty()) return null;
-
-        Expression firstArg = args.get(0);
-        if (!(firstArg instanceof MethodCallExpression innerMce)) return null;
-
-        String name = innerMce.getMethodAsString();
-        if (name == null || name.isEmpty()) return null;
-
-        ClosureExpression closure = findFirstClosure(getArgs(innerMce));
-        if (closure == null) return null;
-        if (!(closure.getCode() instanceof BlockStatement body)) return null;
-
+    private NfProcess extractProcess(ProcessNode proc) {
         List<String> containers = new ArrayList<>();
         List<String> condas = new ArrayList<>();
         List<String> templates = new ArrayList<>();
         List<String> inputs = new ArrayList<>();
         List<String> outputs = new ArrayList<>();
 
-        String currentSection = null;
-
-        for (Statement stmt : body.getStatements()) {
-            String label = getStatementLabel(stmt);
-            if (label != null && !label.isEmpty()) {
-                currentSection = label;
-            }
-
-            if (isSkipSection(currentSection)) continue;
-            if (!(stmt instanceof ExpressionStatement es)) continue;
-            Expression expr = es.getExpression();
-
-            if (currentSection == null) {
-                // Directives before any section label
-                if (expr instanceof MethodCallExpression mce) {
-                    String m = mce.getMethodAsString();
-                    if ("container".equals(m)) {
-                        String v = getFirstStringArg(mce);
-                        if (v != null) containers.add(v);
-                    } else if ("conda".equals(m)) {
-                        String v = getFirstStringArg(mce);
-                        if (v != null) condas.add(v);
-                    } else if ("template".equals(m)) {
-                        String v = getFirstStringArg(mce);
-                        if (v != null) templates.add(v);
-                    }
+        // directives block: container, conda, template (already separated by nf-lang)
+        if (proc.directives instanceof BlockStatement bs) {
+            for (Statement stmt : bs.getStatements()) {
+                if (!(stmt instanceof ExpressionStatement es)) continue;
+                if (!(es.getExpression() instanceof MethodCallExpression mce)) continue;
+                String m = mce.getMethodAsString();
+                switch (m) {
+                    case "container" -> getFirstStringArg(mce).ifPresent(containers::add);
+                    case "conda" -> getFirstStringArg(mce).ifPresent(v -> condas.addAll(splitConda(v)));
+                    case "template" -> getFirstStringArg(mce).ifPresent(templates::add);
                 }
-            } else if ("input".equals(currentSection)) {
-                collectPathPatterns(expr, inputs);
-            } else if ("output".equals(currentSection)) {
-                collectPathPatterns(expr, outputs);
             }
         }
 
-        return new NfProcess(name, containers, condas, templates, inputs, outputs);
-    }
+        // inputs block (already separated by nf-lang)
+        collectPathPatterns(proc.inputs, inputs);
 
-    private boolean isSkipSection(String section) {
-        return "script".equals(section) || "shell".equals(section)
-                || "exec".equals(section) || "when".equals(section)
-                || "stub".equals(section);
+        // outputs block (already separated by nf-lang)
+        collectPathPatterns(proc.outputs, outputs);
+
+        return new NfProcess(proc.getName(), containers, condas, templates, inputs, outputs);
     }
 
     // -------------------------------------------------------------------------
     // Workflow extraction
     // -------------------------------------------------------------------------
 
-    private NfWorkflow extractWorkflow(MethodCallExpression workflowMce,
+    private NfWorkflow extractWorkflow(WorkflowNode wf,
                                         Set<String> knownProcesses,
                                         List<String[]> connections) {
-        List<Expression> args = getArgs(workflowMce);
-        if (args.isEmpty()) return null;
+        String name = wf.isEntry() ? null : wf.getName();
+        if (wf.main == null) return new NfWorkflow(name, Collections.emptyList());
 
-        Expression firstArg = args.get(0);
-
-        if (firstArg instanceof ClosureExpression ce) {
-            // Unnamed workflow: workflow { ... }
-            return processWorkflowClosure(null, ce, knownProcesses, connections);
-        } else if (firstArg instanceof MethodCallExpression innerMce) {
-            // Named workflow: workflow NAME { ... }
-            String name = innerMce.getMethodAsString();
-            ClosureExpression closure = findFirstClosure(getArgs(innerMce));
-            if (closure == null) return null;
-            return processWorkflowClosure(name, closure, knownProcesses, connections);
-        }
-        return null;
-    }
-
-    private NfWorkflow processWorkflowClosure(String name, ClosureExpression closure,
-                                               Set<String> knownProcesses,
-                                               List<String[]> connections) {
-        if (!(closure.getCode() instanceof BlockStatement body)) return new NfWorkflow(name, Collections.emptyList());
-
-        // Build channel variable map (two passes for transitivity).
-        // Each pass visits ALL statements recursively (including those inside if/else blocks).
+        // Build channel variable map (two passes for transitivity)
         Map<String, String> channelVarMap = new LinkedHashMap<>();
-        buildChannelVarMapRecursive(body, knownProcesses, channelVarMap);
-        buildChannelVarMapRecursive(body, knownProcesses, channelVarMap);
+        buildChannelVarMap(wf.main, knownProcesses, channelVarMap);
+        buildChannelVarMap(wf.main, knownProcesses, channelVarMap);
 
         List<String> calls = new ArrayList<>();
-
-        // Detect section labels on the top-level statements, then recurse into nested blocks
-        // while staying in "main" context (or no-section context).
-        visitWorkflowStatements(body, null, knownProcesses, channelVarMap, calls, connections);
+        collectWorkflowCalls(wf.main, knownProcesses, channelVarMap, calls, connections);
 
         return new NfWorkflow(name, calls);
     }
 
     /**
-     * Recursively visit statements in a workflow body block.
-     * Tracks section labels on top-level statements; recurses into if/else and other
-     * nested block constructs so that process calls inside conditional blocks are captured.
+     * Recursively walk the workflow main block, capturing process calls and connections.
+     * Handles nested {@link IfStatement}, {@link WhileStatement}, and {@link ForStatement}
+     * so that calls inside conditional blocks are captured.
      */
-    private void visitWorkflowStatements(Statement stmt, String currentSection,
-                                          Set<String> knownProcesses,
-                                          Map<String, String> channelVarMap,
-                                          List<String> calls, List<String[]> connections) {
+    private void collectWorkflowCalls(Statement stmt,
+                                       Set<String> knownProcesses,
+                                       Map<String, String> channelVarMap,
+                                       List<String> calls,
+                                       List<String[]> connections) {
         if (stmt == null) return;
-
         if (stmt instanceof BlockStatement bs) {
-            String section = currentSection;
             for (Statement child : bs.getStatements()) {
-                String label = getStatementLabel(child);
-                if (label != null && !label.isEmpty()) {
-                    section = label;
-                }
-                visitWorkflowStatements(child, section, knownProcesses, channelVarMap, calls, connections);
+                collectWorkflowCalls(child, knownProcesses, channelVarMap, calls, connections);
             }
-            return;
-        }
-
-        if (stmt instanceof IfStatement is) {
-            // Recurse into if-block and (optional) else-block; inherit current section
-            visitWorkflowStatements(is.getIfBlock(), currentSection, knownProcesses, channelVarMap, calls, connections);
-            visitWorkflowStatements(is.getElseBlock(), currentSection, knownProcesses, channelVarMap, calls, connections);
-            return;
-        }
-
-        if (stmt instanceof WhileStatement ws) {
-            visitWorkflowStatements(ws.getLoopBlock(), currentSection, knownProcesses, channelVarMap, calls, connections);
-            return;
-        }
-
-        if (stmt instanceof ForStatement fs) {
-            visitWorkflowStatements(fs.getLoopBlock(), currentSection, knownProcesses, channelVarMap, calls, connections);
-            return;
-        }
-
-        // Only process calls in "main" or un-sectioned contexts
-        boolean inMain = currentSection == null || "main".equals(currentSection);
-        if (!inMain) return;
-
-        if (!(stmt instanceof ExpressionStatement es)) return;
-        Expression expr = es.getExpression();
-
-        if (expr instanceof MethodCallExpression mce) {
-            String method = mce.getMethodAsString();
-            if (method != null && knownProcesses.contains(method)) {
-                if (!calls.contains(method)) calls.add(method);
-                // Detect connections from process.out references in args
-                Set<String> outRefs = new LinkedHashSet<>();
-                for (Expression arg : getArgs(mce)) {
-                    collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
-                }
-                for (String src : outRefs) {
-                    connections.add(new String[]{src, method});
+        } else if (stmt instanceof IfStatement is) {
+            collectWorkflowCalls(is.getIfBlock(), knownProcesses, channelVarMap, calls, connections);
+            collectWorkflowCalls(is.getElseBlock(), knownProcesses, channelVarMap, calls, connections);
+        } else if (stmt instanceof WhileStatement ws) {
+            collectWorkflowCalls(ws.getLoopBlock(), knownProcesses, channelVarMap, calls, connections);
+        } else if (stmt instanceof ForStatement fs) {
+            collectWorkflowCalls(fs.getLoopBlock(), knownProcesses, channelVarMap, calls, connections);
+        } else if (stmt instanceof ExpressionStatement es) {
+            Expression expr = es.getExpression();
+            if (expr instanceof MethodCallExpression mce) {
+                String method = mce.getMethodAsString();
+                if (method != null && knownProcesses.contains(method)) {
+                    if (!calls.contains(method)) calls.add(method);
+                    Set<String> outRefs = new LinkedHashSet<>();
+                    for (Expression arg : getArgs(mce)) {
+                        collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
+                    }
+                    for (String src : outRefs) {
+                        connections.add(new String[]{src, method});
+                    }
                 }
             }
         }
     }
 
     // -------------------------------------------------------------------------
-    // Channel variable map building
+    // Channel variable map
     // -------------------------------------------------------------------------
 
-    /**
-     * Recursively scan all statements (including those inside if/else/for/while blocks)
-     * and record channel variable assignments into {@code channelVarMap}.
-     */
-    private void buildChannelVarMapRecursive(Statement stmt, Set<String> knownProcesses,
-                                              Map<String, String> channelVarMap) {
+    private void buildChannelVarMap(Statement stmt, Set<String> knownProcesses,
+                                     Map<String, String> channelVarMap) {
         if (stmt == null) return;
         if (stmt instanceof BlockStatement bs) {
             for (Statement child : bs.getStatements()) {
-                buildChannelVarMapRecursive(child, knownProcesses, channelVarMap);
+                buildChannelVarMap(child, knownProcesses, channelVarMap);
             }
         } else if (stmt instanceof IfStatement is) {
-            buildChannelVarMapRecursive(is.getIfBlock(), knownProcesses, channelVarMap);
-            buildChannelVarMapRecursive(is.getElseBlock(), knownProcesses, channelVarMap);
+            buildChannelVarMap(is.getIfBlock(), knownProcesses, channelVarMap);
+            buildChannelVarMap(is.getElseBlock(), knownProcesses, channelVarMap);
         } else if (stmt instanceof WhileStatement ws) {
-            buildChannelVarMapRecursive(ws.getLoopBlock(), knownProcesses, channelVarMap);
+            buildChannelVarMap(ws.getLoopBlock(), knownProcesses, channelVarMap);
         } else if (stmt instanceof ForStatement fs) {
-            buildChannelVarMapRecursive(fs.getLoopBlock(), knownProcesses, channelVarMap);
+            buildChannelVarMap(fs.getLoopBlock(), knownProcesses, channelVarMap);
         } else if (stmt instanceof ExpressionStatement es) {
             scanForChannelAssignments(es.getExpression(), knownProcesses, channelVarMap);
         }
@@ -298,34 +226,27 @@ public class NextflowParser {
     private void scanForChannelAssignments(Expression expr, Set<String> knownProcesses,
                                             Map<String, String> channelVarMap) {
         if (expr == null) return;
-
         // Pattern 1: ch = PROC.out.x
         if (expr instanceof BinaryExpression be) {
             Token op = be.getOperation();
             if ("=".equals(op.getText()) && be.getLeftExpression() instanceof VariableExpression ve) {
                 String varName = ve.getName();
                 if (!channelVarMap.containsKey(varName)) {
-                    Set<String> outRefs = new LinkedHashSet<>();
-                    collectOutRefs(be.getRightExpression(), knownProcesses, channelVarMap, outRefs);
-                    if (!outRefs.isEmpty()) {
-                        channelVarMap.put(varName, outRefs.iterator().next());
-                    }
+                    Set<String> refs = new LinkedHashSet<>();
+                    collectOutRefs(be.getRightExpression(), knownProcesses, channelVarMap, refs);
+                    if (!refs.isEmpty()) channelVarMap.put(varName, refs.iterator().next());
                 }
             }
-            return;
         }
-
         // Pattern 2: expr.set { ch_var }
         if (expr instanceof MethodCallExpression mce && "set".equals(mce.getMethodAsString())) {
             List<Expression> args = getArgs(mce);
             if (!args.isEmpty() && args.get(0) instanceof ClosureExpression ce) {
                 String varName = extractSingleVarFromClosure(ce);
                 if (varName != null && !channelVarMap.containsKey(varName)) {
-                    Set<String> outRefs = new LinkedHashSet<>();
-                    collectOutRefs(mce.getObjectExpression(), knownProcesses, channelVarMap, outRefs);
-                    if (!outRefs.isEmpty()) {
-                        channelVarMap.put(varName, outRefs.iterator().next());
-                    }
+                    Set<String> refs = new LinkedHashSet<>();
+                    collectOutRefs(mce.getObjectExpression(), knownProcesses, channelVarMap, refs);
+                    if (!refs.isEmpty()) channelVarMap.put(varName, refs.iterator().next());
                 }
             }
         }
@@ -335,12 +256,9 @@ public class NextflowParser {
         if (!(ce.getCode() instanceof BlockStatement body)) return null;
         List<Statement> stmts = body.getStatements();
         if (stmts.isEmpty()) return null;
-        Statement first = stmts.get(0);
-        if (!(first instanceof ExpressionStatement es)) return null;
-        Expression expr = es.getExpression();
-        if (expr instanceof VariableExpression ve) {
+        if (!(stmts.get(0) instanceof ExpressionStatement es)) return null;
+        if (es.getExpression() instanceof VariableExpression ve) {
             String name = ve.getName();
-            // Only lowercase identifiers (channel vars are lowercase)
             if (!name.isEmpty() && Character.isLowerCase(name.charAt(0))) return name;
         }
         return null;
@@ -353,52 +271,48 @@ public class NextflowParser {
     private void collectOutRefs(Expression expr, Set<String> knownProcesses,
                                   Map<String, String> channelVarMap, Set<String> found) {
         if (expr == null) return;
-
         if (expr instanceof VariableExpression ve) {
             String name = ve.getName();
-            if (channelVarMap.containsKey(name)) {
-                found.add(channelVarMap.get(name));
-            }
-            return;
-        }
-
-        if (expr instanceof PropertyExpression pe) {
+            if (channelVarMap.containsKey(name)) found.add(channelVarMap.get(name));
+        } else if (expr instanceof PropertyExpression pe) {
             Expression obj = pe.getObjectExpression();
-            String prop = pe.getPropertyAsString();
-            if ("out".equals(prop) && obj instanceof VariableExpression ve
+            if ("out".equals(pe.getPropertyAsString())
+                    && obj instanceof VariableExpression ve
                     && knownProcesses.contains(ve.getName())) {
                 found.add(ve.getName());
-                return;
+            } else {
+                collectOutRefs(obj, knownProcesses, channelVarMap, found);
             }
-            collectOutRefs(obj, knownProcesses, channelVarMap, found);
-            return;
-        }
-
-        if (expr instanceof MethodCallExpression mce) {
+        } else if (expr instanceof MethodCallExpression mce) {
             collectOutRefs(mce.getObjectExpression(), knownProcesses, channelVarMap, found);
             for (Expression arg : getArgs(mce)) {
                 collectOutRefs(arg, knownProcesses, channelVarMap, found);
             }
-            return;
-        }
-
-        if (expr instanceof BinaryExpression be) {
+        } else if (expr instanceof BinaryExpression be) {
             collectOutRefs(be.getLeftExpression(), knownProcesses, channelVarMap, found);
             collectOutRefs(be.getRightExpression(), knownProcesses, channelVarMap, found);
         }
     }
 
     // -------------------------------------------------------------------------
-    // Path pattern extraction (for input/output sections)
+    // Path pattern extraction (input/output sections – already separated by nf-lang)
     // -------------------------------------------------------------------------
 
-    private void collectPathPatterns(Expression expr, List<String> result) {
-        if (expr == null) return;
+    private void collectPathPatterns(Statement stmt, List<String> result) {
+        if (stmt == null) return;
+        if (stmt instanceof BlockStatement bs) {
+            for (Statement child : bs.getStatements()) {
+                collectPathPatterns(child, result);
+            }
+        } else if (stmt instanceof ExpressionStatement es) {
+            collectPathPatternsExpr(es.getExpression(), result);
+        }
+    }
 
+    private void collectPathPatternsExpr(Expression expr, List<String> result) {
+        if (expr == null) return;
         if (expr instanceof MethodCallExpression mce) {
-            String m = mce.getMethodAsString();
-            if ("path".equals(m)) {
-                // Find first string literal in args
+            if ("path".equals(mce.getMethodAsString())) {
                 for (Expression arg : getArgs(mce)) {
                     if (arg instanceof ConstantExpression ce && ce.getValue() instanceof String s
                             && !s.isEmpty()) {
@@ -406,115 +320,47 @@ public class NextflowParser {
                         break;
                     }
                 }
-                return; // Don't recurse into path() call
+                return;
             }
-            // Recurse into non-path calls
-            collectPathPatterns(mce.getObjectExpression(), result);
+            collectPathPatternsExpr(mce.getObjectExpression(), result);
             for (Expression arg : getArgs(mce)) {
-                collectPathPatterns(arg, result);
+                collectPathPatternsExpr(arg, result);
             }
-        } else if (expr instanceof BinaryExpression be) {
-            collectPathPatterns(be.getLeftExpression(), result);
-            collectPathPatterns(be.getRightExpression(), result);
         }
-        // ConstantExpression, VariableExpression, etc. → nothing
     }
 
     // -------------------------------------------------------------------------
-    // Include extraction
-    // -------------------------------------------------------------------------
-
-    private NfInclude extractInclude(MethodCallExpression fromMce) {
-        // MCE("from", obj=MCE("include", args=[ClosureExpr]), args=[ConstantExpr(path)])
-        List<Expression> fromArgs = getArgs(fromMce);
-        if (fromArgs.isEmpty()) return null;
-
-        String path = getFirstStringConst(fromArgs.get(0));
-        if (path == null) return null;
-
-        Expression obj = fromMce.getObjectExpression();
-        if (!(obj instanceof MethodCallExpression includeMce)) return null;
-        if (!"include".equals(includeMce.getMethodAsString())) return null;
-
-        ClosureExpression closure = findFirstClosure(getArgs(includeMce));
-        if (closure == null) return null;
-        if (!(closure.getCode() instanceof BlockStatement closureBody)) return null;
-
-        List<String> imports = new ArrayList<>();
-        for (Statement stmt : closureBody.getStatements()) {
-            if (!(stmt instanceof ExpressionStatement es)) continue;
-            Expression expr = es.getExpression();
-            if (expr instanceof VariableExpression ve) {
-                imports.add(ve.getName());
-            } else if (expr instanceof CastExpression ce) {
-                // PROC_A as ALIAS → include with alias name
-                String alias = ce.getType().getNameWithoutPackage();
-                if (!alias.isEmpty()) imports.add(alias);
-                // Also add original name
-                if (ce.getExpression() instanceof VariableExpression origVe) {
-                    String origName = origVe.getName();
-                    if (!origName.isEmpty() && !imports.contains(origName)) {
-                        imports.add(origName);
-                    }
-                }
-            }
-        }
-        return new NfInclude(path, imports);
-    }
-
-    // -------------------------------------------------------------------------
-    // AST helper utilities
+    // AST helpers
     // -------------------------------------------------------------------------
 
     private List<Expression> getArgs(MethodCallExpression mce) {
         Expression args = mce.getArguments();
-        if (args instanceof TupleExpression te) {
-            return te.getExpressions();
-        }
+        if (args instanceof TupleExpression te) return te.getExpressions();
         return Collections.emptyList();
     }
 
-    private ClosureExpression findFirstClosure(List<Expression> exprs) {
-        for (Expression e : exprs) {
-            if (e instanceof ClosureExpression ce) return ce;
-        }
-        return null;
-    }
-
-    private String getFirstStringArg(MethodCallExpression mce) {
+    private Optional<String> getFirstStringArg(MethodCallExpression mce) {
         for (Expression arg : getArgs(mce)) {
             if (arg instanceof ConstantExpression ce && ce.getValue() instanceof String s) {
-                return s;
+                return Optional.of(s);
             }
         }
-        return null;
+        return Optional.empty();
     }
 
-    private String getFirstStringConst(Expression expr) {
-        if (expr instanceof ConstantExpression ce && ce.getValue() instanceof String s) return s;
-        return null;
+    private static final Pattern SPACE_SPLIT = Pattern.compile("[ \\t]+");
+
+    private List<String> splitConda(String value) {
+        return List.of(SPACE_SPLIT.split(value.trim()));
     }
 
-    private String getStatementLabel(Statement stmt) {
-        // Groovy 4 Statement has getStatementLabel() returning String
-        // Fall back to checking labels list if that API isn't available
-        try {
-            return stmt.getStatementLabel();
-        } catch (NoSuchMethodError e) {
-            // Fallback: try getStatementLabels() if API differs
-            return null;
-        }
-    }
-
-    /** Delimiter for connection deduplication keys; chosen as a character invalid in process names. */
-    private static final char CONNECTION_KEY_DELIMITER = '\u0000';
+    private static final char CONN_KEY_SEP = '\u0000';
 
     private List<String[]> deduplicateConnections(List<String[]> connections) {
         Set<String> seen = new LinkedHashSet<>();
         List<String[]> result = new ArrayList<>();
         for (String[] conn : connections) {
-            String key = conn[0] + CONNECTION_KEY_DELIMITER + conn[1];
-            if (seen.add(key)) result.add(conn);
+            if (seen.add(conn[0] + CONN_KEY_SEP + conn[1])) result.add(conn);
         }
         return result;
     }
