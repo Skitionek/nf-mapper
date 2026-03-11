@@ -36,6 +36,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`.github/copilot-instructions.md`** – codebase summary for AI coding
   agents (replaces the ad-hoc `CODEBASE_NOTES.md`).
 
+- **Docker image published to GitHub Container Registry** –
+  `.github/workflows/docker-publish.yml` builds and pushes the image to
+  `ghcr.io/skitionek/nf-mapper` automatically on every push to `main` and on
+  version tags (`v*`).  Pull requests trigger a build-only run (no push) to
+  catch `Dockerfile` breakage early.  Published tags:
+
+  | Tag pattern | When created |
+  |---|---|
+  | `main` | push to the `main` branch |
+  | `1.2.3` / `1.2` | semver release tag (`v1.2.3`) |
+  | `sha-<short>` | every commit |
+
+- **Docker usage documentation** – README now includes a *Docker* sub-section
+  under both *Installation* and *Quick start* with `docker run --rm` examples
+  for printing to stdout, saving to a file, and updating an existing Markdown
+  file in-place.
+
 ### Fixed
 
 - **Branch-merge duplication bug** – `_render_dag` previously called
