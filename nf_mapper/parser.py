@@ -6,6 +6,7 @@ workflows, includes, and the connections between processes.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
@@ -720,8 +721,15 @@ def _extract_includes(include_cmd_children: list) -> list[NfInclude]:
         return []
     imports: list[str] = []
     if len(include_cmd_children) > 1:
+        # Handle aliases: ``include { X as Y }`` should register only Y (the
+        # alias), not X (the original name).  When an AS token is encountered
+        # the most-recently added name is the original being aliased – remove
+        # it so the next CAPITALIZED_IDENTIFIER (the alias) replaces it.
         for ltype, lval in _iter_leaves(include_cmd_children[1]):
-            if ltype == "CAPITALIZED_IDENTIFIER":
+            if ltype == "AS":
+                if imports:
+                    imports.pop()
+            elif ltype == "CAPITALIZED_IDENTIFIER":
                 imports.append(lval)
     return [NfInclude(path=p, imports=imports) for p in paths]
 
@@ -844,6 +852,12 @@ def parse_nextflow_content(content: str) -> ParsedPipeline:
 def parse_nextflow_file(filepath: str) -> ParsedPipeline:
     """Parse a Nextflow pipeline file and return a :class:`ParsedPipeline`.
 
+    Recursively follows relative-path ``include`` statements (up to one level
+    deep) to gather processes and connections from directly-included workflow
+    files.  This allows a top-level ``main.nf`` that delegates work to
+    sub-workflows via includes to produce a diagram showing all constituent
+    processes rather than just the single imported-workflow node.
+
     Parameters
     ----------
     filepath:
@@ -852,8 +866,129 @@ def parse_nextflow_file(filepath: str) -> ParsedPipeline:
     Returns
     -------
     ParsedPipeline
-        Extracted processes, workflows, includes, and connections.
+        Extracted processes, workflows, includes, and connections from
+        *filepath* and its reachable include files.
     """
-    with open(filepath, encoding="utf-8") as fh:
+    return _parse_file_recursive(
+        abs_filepath=os.path.abspath(filepath),
+        visited=set(),
+        depth=0,
+        max_depth=1,
+    )
+
+
+def _parse_file_recursive(
+    abs_filepath: str,
+    visited: set[str],
+    depth: int,
+    max_depth: int,
+) -> ParsedPipeline:
+    """Internal recursive helper for :func:`parse_nextflow_file`.
+
+    At each level the file is parsed with :func:`parse_nextflow_content`.
+    When *depth* is still below *max_depth* the function also follows every
+    relative-path ``include`` statement:
+
+    * If the included file defines a **workflow** whose name matches one of
+      the imported identifiers, that workflow's constituent process calls are
+      **expanded** into stub :class:`NfProcess` objects and merged into the
+      caller's process list.  The imported workflow name is removed from the
+      caller's include list (since it is now represented by its constituent
+      nodes) to avoid it appearing as an isolated ghost node in the diagram.
+    * If the included file defines a **process** whose name matches, that
+      process definition (with containers, condas, outputs, etc.) is merged
+      in, replacing the stub that would otherwise come from the include.
+    * Connections extracted from included files are merged into the caller's
+      connection list.
+
+    Files that cannot be found or cannot be parsed are silently skipped.
+    Circular includes are detected via the *visited* set.
+    """
+    if abs_filepath in visited:
+        return ParsedPipeline(processes=[], workflows=[], includes=[], connections=[])
+    visited.add(abs_filepath)
+
+    with open(abs_filepath, encoding="utf-8") as fh:
         content = fh.read()
-    return parse_nextflow_content(content)
+    pipeline = parse_nextflow_content(content)
+
+    if depth >= max_depth:
+        return pipeline
+
+    base_dir = os.path.dirname(abs_filepath)
+
+    merged_processes: list[NfProcess] = list(pipeline.processes)
+    merged_connections: list[tuple[str, str]] = list(pipeline.connections)
+    existing_proc_names: set[str] = {p.name for p in merged_processes}
+    existing_conn_set: set[tuple[str, str]] = set(pipeline.connections)
+
+    # Track which imported names were successfully expanded so we can remove
+    # them from the includes list (they no longer need to appear as isolated
+    # nodes – their constituent processes represent them).
+    expanded_imports: set[str] = set()
+
+    for inc in pipeline.includes:
+        # Only follow relative-path includes; skip plugin paths etc.
+        if not (inc.path.startswith("./") or inc.path.startswith("../")):
+            continue
+
+        resolved = os.path.normpath(os.path.join(base_dir, inc.path))
+        if not resolved.endswith(".nf"):
+            resolved += ".nf"
+
+        if not os.path.isfile(resolved):
+            continue
+
+        try:
+            sub = _parse_file_recursive(resolved, visited, depth + 1, max_depth)
+        except Exception:  # noqa: BLE001
+            continue
+
+        sub_wf_map = {wf.name: wf for wf in sub.workflows if wf.name}
+        sub_proc_map = {p.name: p for p in sub.processes}
+
+        for import_name in inc.imports:
+            if import_name in sub_wf_map:
+                # Expand the workflow's calls as stub (or full) processes
+                sub_wf = sub_wf_map[import_name]
+                for call_name in sub_wf.calls:
+                    if call_name not in existing_proc_names:
+                        proc = sub_proc_map.get(call_name, NfProcess(name=call_name))
+                        merged_processes.append(proc)
+                        existing_proc_names.add(call_name)
+                expanded_imports.add(import_name)
+            elif import_name in sub_proc_map:
+                # Replace the stub with the full process definition
+                if import_name not in existing_proc_names:
+                    merged_processes.append(sub_proc_map[import_name])
+                    existing_proc_names.add(import_name)
+                expanded_imports.add(import_name)
+
+        # Merge connections from the sub-pipeline
+        for conn in sub.connections:
+            if conn not in existing_conn_set:
+                merged_connections.append(conn)
+                existing_conn_set.add(conn)
+
+    # Rebuild includes, removing entries that were fully expanded (all their
+    # imported names are now represented as concrete processes).
+    new_includes: list[NfInclude] = []
+    for inc in pipeline.includes:
+        remaining = [name for name in inc.imports if name not in expanded_imports]
+        if remaining:
+            new_includes.append(NfInclude(path=inc.path, imports=remaining))
+
+    # Deduplicate connections while preserving order
+    seen_conns: set[tuple[str, str]] = set()
+    unique_conns: list[tuple[str, str]] = []
+    for conn in merged_connections:
+        if conn not in seen_conns:
+            seen_conns.add(conn)
+            unique_conns.append(conn)
+
+    return ParsedPipeline(
+        processes=merged_processes,
+        workflows=pipeline.workflows,
+        includes=new_includes,
+        connections=unique_conns,
+    )
