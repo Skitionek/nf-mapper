@@ -40,7 +40,7 @@ public class MermaidRenderer {
     static {
         DEFAULT_GITGRAPH_CONFIG = new LinkedHashMap<>();
         DEFAULT_GITGRAPH_CONFIG.put("showBranches", true);
-        DEFAULT_GITGRAPH_CONFIG.put("parallelCommits", true);
+        DEFAULT_GITGRAPH_CONFIG.put("parallelCommits", false);
     }
 
     public String render(ParsedPipeline pipeline, String title, Map<String, Object> configOverrides) {
