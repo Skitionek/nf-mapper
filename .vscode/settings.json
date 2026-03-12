@@ -1,0 +1,53 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.debug.settings.hotCodeReplace": "auto",
+  "maven.executable.path": "mvn",
+  "maven.terminal.useJavaHome": true,
+  "maven.pomfile.autoUpdateEffectivePOM": true,
+
+  "files.exclude": {
+    "**/target": false,
+    "**/.classpath": true,
+    "**/.project": true,
+    "**/.settings": true,
+    "**/.factorypath": true
+  },
+
+  "files.watcherExclude": {
+    "**/target/**": true
+  },
+
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  },
+
+  "java.sources": {
+    "organizeImports": {
+      "starThreshold": 5,
+      "staticStarThreshold": 3
+    }
+  },
+
+  "[java]": {
+    "editor.defaultFormatter": "redhat.java",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  },
+
+  "[xml]": {
+    "editor.defaultFormatter": "redhat.vscode-xml",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  },
+
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "comments": "off",
+      "strings": "off",
+      "other": "off"
+    }
+  }
+}

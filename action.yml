@@ -22,8 +22,16 @@ inputs:
     description: "Output format: 'plain' (raw Mermaid) or 'md' (fenced code block) (default: md)"
     required: false
     default: "md"
+  renderer:
+    description: "Renderer strategy: 'default' or 'conditional' (default: default)"
+    required: false
+    default: "default"
+  theme:
+    description: "Theme class: 'nf-core' or 'plain' (default: nf-core)"
+    required: false
+    default: "nf-core"
   config:
-    description: "JSON object of Mermaid gitGraph config overrides, e.g. '{\"showBranches\": true}'. Merged with defaults: showBranches=false, parallelCommits=true."
+    description: "JSON object of Mermaid gitGraph config overrides, e.g. '{\"showBranches\": true}'. Merged with defaults: showBranches=true, parallelCommits=false."
     required: false
     default: ""
   update:
@@ -60,7 +68,7 @@ runs:
       id: generate
       shell: bash
       run: |
-        ARGS="${{ inputs.pipeline }} --format ${{ inputs.format }}"
+        ARGS="${{ inputs.pipeline }} --format ${{ inputs.format }} --renderer ${{ inputs.renderer }} --theme ${{ inputs.theme }}"
         if [ -n "${{ inputs.title }}" ]; then
           ARGS="${ARGS} --title '${{ inputs.title }}'"
         fi

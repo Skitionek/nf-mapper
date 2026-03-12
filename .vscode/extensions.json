@@ -1,0 +1,15 @@
+{
+  "recommendations": [
+    "vscjava.vscode-java-pack",
+    "vscjava.vscode-maven",
+    "vscjava.vscode-java-test",
+    "vscjava.vscode-java-debug",
+    "redhat.java",
+    "visualstudioexptteam.vscodeintellicode",
+    "github.copilot",
+    "github.copilot-chat",
+    "bierner.markdown-mermaid",
+    "bpruitt-goddard.mermaid-markdown-syntax-highlighting",
+    "redhat.vscode-xml"
+  ]
+}

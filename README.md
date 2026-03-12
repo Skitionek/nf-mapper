@@ -3,26 +3,43 @@
 [![CI](https://github.com/Skitionek/nf-mapper/actions/workflows/ci.yml/badge.svg)](https://github.com/Skitionek/nf-mapper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Java 17+](https://img.shields.io/badge/java-17%2B-blue.svg)](https://adoptium.net/)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Skitionek/nf-mapper)
 
 **Convert Nextflow pipelines into [Mermaid](https://mermaid.js.org/) `gitGraph` diagrams.**
 
 nf-mapper parses `.nf` files using the [official Nextflow AST library](https://www.nextflow.io/docs/latest/developer/nextflow.ast.html)
-(`io.nextflow:nf-lang`) and renders the pipeline's process graph as a metro-map-style `gitGraph`:
+(`io.nextflow:nf-lang`) and renders the pipeline's process graph as a `gitGraph`:
 each process is a commit, the primary processing chain stays on `main`,
 and parallel or QC branches diverge just like in a real git history.
+
+## Table of contents
+
+- [Why nf-mapper?](#why-nf-mapper)
+- [Features](#features)
+- [Comparison with other DAG visualisations](#comparison-with-other-dag-visualisations)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Selection modes](#selection-modes)
+- [Example outputs](#example-outputs)
+- [Snapshots](#snapshots)
+- [CLI reference](#cli-reference)
+- [GitHub Action](#github-action)
+- [How it works](#how-it-works)
+- [Development](#development)
+- [License](#license)
 
 ---
 
 ## Why nf-mapper?
 
 Nextflow pipelines can grow quickly into complex, multi-step workflows that are
-difficult to navigate for anyone who did not write them.  Documentation written
+difficult to navigate for anyone who did not write them. Documentation written
 by hand quickly drifts out of sync as the pipeline evolves, leaving new
 contributors — or your future self — without a reliable overview.
 
 nf-mapper solves this by **generating pipeline diagrams automatically from the
 source code itself**, so the documentation is always in sync with the actual
-workflow.  Visualising the process graph as a metro-map-style `gitGraph` makes
+workflow. Visualising the process graph as a `gitGraph` makes
 it easy to:
 
 - **Understand new projects quickly** — spot the main processing chain, parallel
@@ -55,13 +72,39 @@ it easy to:
   patterns (e.g. `"*.bam"`, `"*.html"`)
 - Outputs valid [Mermaid `gitGraph`](https://mermaid.js.org/syntax/gitgraph.html)
   diagrams – paste directly into GitHub Markdown, Notion, Confluence, etc.
-- **Channel nodes**: each output path pattern rendered as a `HIGHLIGHT` commit
-  tagged with the file extension (e.g. `tag: "bam"`)
+- **Channel nodes**: each output path pattern inlined as a `tag:` on the process
+  commit (e.g. `commit id: "ALIGN" tag: "*.bam"`)
 - **Cherry-pick**: when a branch process consumes a channel committed on a
   different branch, a `cherry-pick` commit shows the data flow explicitly
 - **Workflow-call branches**: independent workflow calls in a flat pipeline are
   each placed on their own branch instead of a linear sequence
+- **Multiple renderers**:
+  - `default` (`gitGraph`) – branch/main-path focused
+  - `conditional` (`gitGraph`) – condition-group branches for if/else-heavy workflows
 - Available as a **CLI tool** (fat JAR), a **Docker image** and a **GitHub Action**
+
+---
+
+## Comparison with other DAG visualisations
+
+### Nextflow `--with-dag`
+
+Reference: [https://nextflow.io/docs/latest/developer/nextflow.dag.html](https://nextflow.io/docs/latest/developer/nextflow.dag.html)
+
+- Like nf-mapper, Nextflow's DAG machinery is grounded in native Nextflow internals.
+- In practice, `nextflow --with-dag` output can become hard to read for complex,
+  heavily branched pipelines.
+- nf-mapper focuses on readability for large workflows by rendering a
+  Mermaid `gitGraph` with an explicit main path and side branches.
+
+### `nf-metro`
+
+Reference: [https://github.com/pinin4fjords/nf-metro](https://github.com/pinin4fjords/nf-metro)
+
+- `nf-metro` builds on `nextflow.dag` output rather than parsing `.nf` files natively.
+- It tends to oversimplify the workflow structure for complex pipelines.
+- nf-mapper parses source DSL2 files directly via `io.nextflow:nf-lang`, aiming to
+  preserve more of the real process/workflow relationships.
 
 ---
 
@@ -107,6 +150,9 @@ java -jar nf-mapper.jar workflow.nf -o diagram.md --format md
 # Override Mermaid gitGraph config options
 java -jar nf-mapper.jar workflow.nf --config '{"showBranches": true}'
 
+# Select renderer strategy and theme
+java -jar nf-mapper.jar workflow.nf --renderer conditional --theme plain
+
 # Update a specific diagram block inside an existing Markdown file in-place
 java -jar nf-mapper.jar workflow.nf --update README.md --format md
 
@@ -138,6 +184,107 @@ for every release.
 
 ---
 
+## Selection modes
+
+You can select these dimensions for CLI, `--update`, and `--regenerate`:
+
+| Dimension | Option | Values | Default |
+| --- | --- | --- | --- |
+| Renderer | `--renderer` | `default`, `conditional` | `default` |
+| Theme | `--theme` | `nf-core`, `plain` | `nf-core` |
+
+Renderer × theme diagram examples:
+
+### default + nf-core
+
+<!-- nf-mapper:selection-default-nfcore pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="default/nf-core" format="md" renderer="default" theme="nf-core" -->
+```mermaid
+---
+title: default/nf-core
+---
+%%{init: {'theme': 'base', 'themeVariables': {'git0': '#24B064', 'gitInv0': '#ffffff', 'git1': '#FA7F19', 'gitInv1': '#ffffff', 'git2': '#0570b0', 'gitInv2': '#ffffff', 'git3': '#e63946', 'gitInv3': '#ffffff', 'git4': '#9b59b6', 'gitInv4': '#ffffff', 'git5': '#f5c542', 'gitInv5': '#000000', 'git6': '#1abc9c', 'gitInv6': '#ffffff', 'git7': '#7b2d3b', 'gitInv7': '#ffffff'}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
+gitGraph LR:
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch QC
+   checkout QC
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
+```
+<!-- /nf-mapper:selection-default-nfcore -->
+
+### default + plain
+
+<!-- nf-mapper:selection-default-plain pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="default/plain" format="md" renderer="default" theme="plain" -->
+```mermaid
+---
+title: default/plain
+---
+%%{init: {'theme': 'default', 'themeVariables': {}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
+gitGraph LR:
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch QC
+   checkout QC
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
+```
+<!-- /nf-mapper:selection-default-plain -->
+
+### conditional + nf-core
+
+<!-- nf-mapper:selection-conditional-nfcore pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="conditional/nf-core" format="md" renderer="conditional" theme="nf-core" -->
+```mermaid
+---
+title: conditional/nf-core
+---
+%%{init: {'theme': 'base', 'themeVariables': {'git0': '#24B064', 'gitInv0': '#ffffff', 'git1': '#FA7F19', 'gitInv1': '#ffffff', 'git2': '#0570b0', 'gitInv2': '#ffffff', 'git3': '#e63946', 'gitInv3': '#ffffff', 'git4': '#9b59b6', 'gitInv4': '#ffffff', 'git5': '#f5c542', 'gitInv5': '#000000', 'git6': '#1abc9c', 'gitInv6': '#ffffff', 'git7': '#7b2d3b', 'gitInv7': '#ffffff'}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
+gitGraph LR:
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch if_params_run_qc
+   checkout if_params_run_qc
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
+```
+<!-- /nf-mapper:selection-conditional-nfcore -->
+
+### conditional + plain
+
+<!-- nf-mapper:selection-conditional-plain pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="conditional/plain" format="md" renderer="conditional" theme="plain" -->
+```mermaid
+---
+title: conditional/plain
+---
+%%{init: {'theme': 'default', 'themeVariables': {}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
+gitGraph LR:
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch if_params_run_qc
+   checkout if_params_run_qc
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
+```
+<!-- /nf-mapper:selection-conditional-plain -->
+
+---
+
 ## Example outputs
 
 > These diagrams are kept up to date automatically on every push to `main`
@@ -145,7 +292,7 @@ for every release.
 > Each block is wrapped in named HTML comment markers so `nf-mapper --update`
 > can regenerate them in-place.
 
-### Linear pipeline  *(two-step QC)*
+### Linear pipeline _(two-step QC)_
 
 ```nextflow
 process FASTQC  { ... }
@@ -170,7 +317,7 @@ gitGraph LR:
 ```
 <!-- /nf-mapper:example-linear -->
 
-### Branching pipeline  *(QC + alignment)*
+### Branching pipeline _(QC + alignment)_
 
 ```nextflow
 include { FASTQC     } from './modules/fastqc'
@@ -251,12 +398,31 @@ gitGraph LR:
 
 ---
 
+## Snapshots
+
+Renderer snapshots are generated by tests and written to [snapshots/](snapshots/).
+
+Generate all snapshots:
+
+```bash
+cd nf-mapper
+mvn test -Dtest=Snapshot*
+```
+
+Renderer-specific snapshot examples:
+
+- Default (`gitGraph`): [snapshots/simple_workflow_default.md](snapshots/simple_workflow_default.md)
+- Conditional (`gitGraph`): [snapshots/if_workflow_conditional_conditional.md](snapshots/if_workflow_conditional_conditional.md)
+
+---
+
 ## CLI reference
 
 ```
 usage: nf-mapper [-h] [-o FILE | --update FILE | --regenerate FILE]
                  [--marker NAME] [--title TITLE] [--format {plain,md}]
-                 [--config JSON]
+                 [--config JSON] [--renderer {default,conditional}]
+                 [--theme {nf-core,plain}]
                  [PIPELINE.NF]
 
 positional arguments:
@@ -280,8 +446,12 @@ options:
   --format {plain,md}   Output format: 'plain' emits raw Mermaid syntax;
                         'md' wraps it in a fenced code block (default: plain).
   --config JSON         JSON object of Mermaid gitGraph config overrides,
-                        e.g. '{"showBranches": true}'. Merged with defaults:
-                        showBranches=false, parallelCommits=true.
+                         e.g. '{"showBranches": true}'. Merged with defaults:
+                         showBranches=true, parallelCommits=false.
+  --renderer {default,conditional}
+                        Renderer strategy used to emit Mermaid output.
+  --theme {nf-core,plain}
+                        Theme class for Mermaid init/themeVariables.
 ```
 
 ### Preset attributes
@@ -289,12 +459,14 @@ options:
 Each `<!-- nf-mapper -->` comment block in a Markdown file can carry preset
 attributes that are read back by `--regenerate`:
 
-| Attribute | Required | Description |
-|---|---|---|
-| `pipeline` | ✅ | Path to the `.nf` file (relative to the Markdown file) |
-| `title` | | Diagram title |
-| `format` | | `plain` or `md` (default: `md`) |
-| `config` | | JSON object of Mermaid gitGraph config overrides |
+| Attribute     | Required | Description                                            |
+| ------------- | -------- | ------------------------------------------------------ |
+| `pipeline`    | ✅       | Path to the `.nf` file (relative to the Markdown file) |
+| `title`       |          | Diagram title                                          |
+| `format`      |          | `plain` or `md` (default: `md`)                        |
+| `config`      |          | JSON object of Mermaid gitGraph config overrides       |
+| `renderer`    |          | `default`, `conditional`                               |
+| `theme`       |          | `nf-core` or `plain`                                   |
 
 Use unique marker names when a file contains multiple diagrams:
 
@@ -302,7 +474,7 @@ Use unique marker names when a file contains multiple diagrams:
 <!-- nf-mapper:main-wf pipeline="workflows/main.nf" title="Main" format="md" -->
 <!-- /nf-mapper:main-wf -->
 
-<!-- nf-mapper:qc pipeline="workflows/qc.nf" title="QC" format="md" -->
+<!-- nf-mapper:qc pipeline="workflows/qc.nf" title="QC" format="md" renderer="conditional" theme="plain" -->
 <!-- /nf-mapper:qc -->
 ```
 
@@ -311,6 +483,7 @@ Then regenerate all at once:
 ```bash
 nf-mapper --regenerate README.md
 ```
+
 ---
 
 ## GitHub Action
@@ -392,20 +565,22 @@ Then update each block independently:
 
 ### Action inputs
 
-| Input | Required | Default | Description |
-|---|---|---|---|
-| `pipeline` | ✅ | — | Path to the `.nf` file |
-| `output` | | `diagram.md` | Output file path (ignored when `update` is set) |
-| `title` | | _(none)_ | Diagram title |
-| `format` | | `md` | `plain` or `md` |
-| `config` | | _(none)_ | JSON object of Mermaid gitGraph config overrides, e.g. `{"showBranches": true}` |
-| `update` | | _(none)_ | Path to a Markdown file with `<!-- MARKER -->` / `<!-- /MARKER -->` blocks to update in-place |
-| `marker` | | `nf-mapper` | Marker name identifying which block to update; use unique names for multiple diagrams in one file |
+| Input      | Required | Default      | Description                                                                                       |
+| ---------- | -------- | ------------ | ------------------------------------------------------------------------------------------------- |
+| `pipeline` | ✅       | —            | Path to the `.nf` file                                                                            |
+| `output`   |          | `diagram.md` | Output file path (ignored when `update` is set)                                                   |
+| `title`    |          | _(none)_     | Diagram title                                                                                     |
+| `format`   |          | `md`         | `plain` or `md`                                                                                   |
+| `renderer` |          | `default`    | Renderer strategy: `default`, `conditional`                                                       |
+| `theme`    |          | `nf-core`    | Theme class: `nf-core`, `plain`                                                                   |
+| `config`   |          | _(none)_     | JSON object of Mermaid gitGraph config overrides, e.g. `{"showBranches": true}`                   |
+| `update`   |          | _(none)_     | Path to a Markdown file with `<!-- MARKER -->` / `<!-- /MARKER -->` blocks to update in-place     |
+| `marker`   |          | `nf-mapper`  | Marker name identifying which block to update; use unique names for multiple diagrams in one file |
 
 ### Action outputs
 
-| Output | Description |
-|---|---|
+| Output    | Description                                   |
+| --------- | --------------------------------------------- |
 | `diagram` | Path to the generated or updated diagram file |
 
 ---
@@ -414,14 +589,14 @@ Then update each block independently:
 
 1. **Parse** – The `.nf` file is parsed using the
    [official Nextflow AST library](https://www.nextflow.io/docs/latest/developer/nextflow.ast.html)
-   (`io.nextflow:nf-lang`).  The `ScriptAstBuilder` produces a `ScriptNode` —
+   (`io.nextflow:nf-lang`). The `ScriptAstBuilder` produces a `ScriptNode` —
    a `ModuleNode` subclass that exposes the Nextflow DSL constructs via clean
    typed getters.
 
 2. **Extract** – The `ScriptNode` is interrogated to find:
    - `process` blocks via `getProcesses()` — each `ProcessNode` has
      pre-split `directives`, `inputs`, and `outputs` statements (no manual
-     label scanning needed).  Container, conda and template directives are
+     label scanning needed). Container, conda and template directives are
      read directly from the directives block; string-literal `path(...)` patterns
      (e.g. `"*.bam"`, `"*.html"`) are extracted from the inputs/outputs blocks.
    - `workflow` blocks via `getWorkflows()` — each `WorkflowNode` has `takes`,
@@ -448,13 +623,31 @@ Then update each block independently:
 
 ## Development
 
-### Setup
+### Quick Start with Codespaces
+
+The fastest way to start developing is using GitHub Codespaces. Click the badge at the top of this README or the button below:
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=Skitionek/nf-mapper)
+
+The development environment will be ready in 2-3 minutes with:
+
+- ✅ Java 17 (Temurin)
+- ✅ Maven 3.9
+- ✅ All VS Code extensions for Java development
+- ✅ Project dependencies pre-downloaded
+- ✅ Tests verified
+
+See [`.devcontainer/README.md`](.devcontainer/README.md) for more details.
+
+### Local Setup
 
 ```bash
 git clone https://github.com/Skitionek/nf-mapper.git
 cd nf-mapper/nf-mapper
 mvn package -DskipTests
 ```
+
+**Requirements**: Java 17+, Maven 3.6+
 
 ### Running tests
 
@@ -466,16 +659,16 @@ mvn test
 Tests use real nf-core pipeline files as fixtures in
 `nf-mapper/src/test/resources/fixtures/`:
 
-| Fixture | Source |
-|---|---|
-| `nf_core_fetchngs_sra.nf` | [nf-core/fetchngs](https://github.com/nf-core/fetchngs) `workflows/sra/main.nf` |
+| Fixture                    | Source                                                                                 |
+| -------------------------- | -------------------------------------------------------------------------------------- |
+| `nf_core_fetchngs_sra.nf`  | [nf-core/fetchngs](https://github.com/nf-core/fetchngs) `workflows/sra/main.nf`        |
 | `nf_core_fastqc_module.nf` | [nf-core/modules](https://github.com/nf-core/modules) `modules/nf-core/fastqc/main.nf` |
-| `complex_workflow.nf` | Synthetic – exercises multi-argument and conditional-block call detection |
+| `complex_workflow.nf`      | Synthetic – exercises multi-argument and conditional-block call detection              |
 
 ### CI
 
 GitHub Actions builds the Maven project and runs all tests (Java 17)
-on every push and pull request.  See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+on every push and pull request. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ---
 
@@ -485,10 +678,10 @@ nf-mapper is released under the **[MIT License](LICENSE)**.
 
 ### Third-party licences
 
-| Dependency | Licence |
-|---|---|
-| [io.nextflow:nf-lang](https://github.com/nextflow-io/nextflow) | Apache-2.0 |
-| [org.apache.groovy:groovy](https://groovy-lang.org/) | Apache-2.0 |
-| [info.picocli:picocli](https://picocli.info/) | Apache-2.0 |
-| [nf-core/fetchngs](https://github.com/nf-core/fetchngs) *(test fixture)* | MIT |
-| [nf-core/modules](https://github.com/nf-core/modules) *(test fixture)* | MIT |
+| Dependency                                                               | Licence    |
+| ------------------------------------------------------------------------ | ---------- |
+| [io.nextflow:nf-lang](https://github.com/nextflow-io/nextflow)           | Apache-2.0 |
+| [org.apache.groovy:groovy](https://groovy-lang.org/)                     | Apache-2.0 |
+| [info.picocli:picocli](https://picocli.info/)                            | Apache-2.0 |
+| [nf-core/fetchngs](https://github.com/nf-core/fetchngs) _(test fixture)_ | MIT        |
+| [nf-core/modules](https://github.com/nf-core/modules) _(test fixture)_   | MIT        |
