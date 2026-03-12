@@ -166,7 +166,7 @@ title: nf-core/rnaseq QC
 gitGraph LR:
    checkout main
    commit id: "FASTQC"
-   commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "*.html" tag: "*.zip"
+   commit id: "FASTQC: *" type: HIGHLIGHT tag: "*.html" tag: "*.zip"
    commit id: "MULTIQC"
    commit id: "MULTIQC: multiqc_report.html" type: HIGHLIGHT tag: "multiqc_report.html"
 ```
