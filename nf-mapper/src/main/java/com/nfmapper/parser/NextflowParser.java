@@ -171,13 +171,32 @@ public class NextflowParser {
      * Iteratively replace any connection endpoint that is a named sub-workflow with
      * that sub-workflow's constituent entry/exit processes, until no named workflow
      * nodes remain in the connection graph.
+     *
+     * <p>The loop is bounded to {@code namedWorkflows.size() * 2 + 1} iterations so
+     * that mutually-recursive or self-referential workflow call graphs (which are
+     * invalid in Nextflow but may appear through include-merging artefacts) cannot
+     * cause an infinite loop.  Any connection whose endpoints are still named
+     * workflows after the bound is exceeded is dropped from the result rather than
+     * left as an unresolved node.
+     *
+     * <p>Self-loop edges ({@code A → A}) are never added to the expansion result;
+     * they would create a cycle in the downstream DAG rendering.
      */
     private List<String[]> unfoldSubWorkflowConnections(List<String[]> connections,
                                                          Map<String, NfWorkflow> namedWorkflows) {
         if (namedWorkflows.isEmpty()) return connections;
+        // Each iteration resolves one level of nesting for either src or dst
+        // (destination takes priority in the expansion — src is only expanded on the
+        // *next* pass after the destination is fully resolved).  In the acyclic case,
+        // a connection [X, Wk] where Wk is nested k-levels deep needs k passes to
+        // fully resolve the destination, plus up to another k passes for the source
+        // side.  Using namedWorkflows.size() * 2 + 1 as the bound is therefore a
+        // conservative but tight upper-bound for acyclic topologies, and simply caps
+        // the work for cyclic (invalid) topologies.
+        int maxIterations = namedWorkflows.size() * 2 + 1;
         boolean changed = true;
         List<String[]> result = new ArrayList<>(connections);
-        while (changed) {
+        while (changed && maxIterations-- > 0) {
             changed = false;
             List<String[]> next = new ArrayList<>();
             for (String[] conn : result) {
@@ -187,7 +206,10 @@ public class NextflowParser {
                     if (!dstWf.getCalls().isEmpty()) {
                         // X -> SubWorkflow: expand to X -> [entry processes of SubWorkflow]
                         for (String entry : workflowEntryProcesses(dstWf, result)) {
-                            next.add(new String[]{conn[0], entry});
+                            // Skip self-loops; they create cycles in the DAG.
+                            if (!entry.equals(conn[0])) {
+                                next.add(new String[]{conn[0], entry});
+                            }
                         }
                     }
                     // If dstWf has no calls (empty body), drop the connection entirely –
@@ -197,7 +219,10 @@ public class NextflowParser {
                     if (!srcWf.getCalls().isEmpty()) {
                         // SubWorkflow -> Y: expand to [exit processes of SubWorkflow] -> Y
                         for (String exit : workflowExitProcesses(srcWf, result)) {
-                            next.add(new String[]{exit, conn[1]});
+                            // Skip self-loops; they create cycles in the DAG.
+                            if (!exit.equals(conn[1])) {
+                                next.add(new String[]{exit, conn[1]});
+                            }
                         }
                     }
                     // If srcWf has no calls, drop the connection similarly.
@@ -208,6 +233,12 @@ public class NextflowParser {
             }
             result = next;
         }
+        // Remove any connections whose endpoints are still named workflow names – these
+        // could not be resolved (e.g. due to a cycle) and would produce orphan nodes.
+        Set<String> wfNames = namedWorkflows.keySet();
+        result = result.stream()
+                .filter(c -> !wfNames.contains(c[0]) && !wfNames.contains(c[1]))
+                .collect(java.util.stream.Collectors.toList());
         return deduplicateConnections(result);
     }
 
@@ -629,6 +660,8 @@ public class NextflowParser {
         Set<String> seen = new LinkedHashSet<>();
         List<String[]> result = new ArrayList<>();
         for (String[] conn : connections) {
+            // Skip self-loops (A → A): they would introduce cycles into the DAG.
+            if (conn[0].equals(conn[1])) continue;
             if (seen.add(conn[0] + CONN_KEY_SEP + conn[1])) result.add(conn);
         }
         return result;

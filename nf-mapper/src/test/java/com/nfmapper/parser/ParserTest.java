@@ -521,6 +521,81 @@ class ParserTest {
     }
 
     // -------------------------------------------------------------------------
+    // Cycle / dead-loop regression tests (infinite loop in unfoldSubWorkflow)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Two named workflows that mutually call each other (W1 calls W2, W2 calls W1)
+     * must not cause an infinite loop in unfoldSubWorkflowConnections.
+     */
+    @Test void testMutuallyRecursiveWorkflowCallsDoNotHang() {
+        // W1 calls W2, W2 calls W1 – circular workflow dependency (invalid in real
+        // Nextflow, but must not hang).  Parser should terminate and return a pipeline.
+        String content =
+            "process PROC_A {\n    script:\n    'echo a'\n}\n" +
+            "process PROC_B {\n    script:\n    'echo b'\n}\n" +
+            "workflow W1 {\n" +
+            "    take: input\n" +
+            "    main:\n" +
+            "        W2(input)\n" +
+            "}\n" +
+            "workflow W2 {\n" +
+            "    take: input\n" +
+            "    main:\n" +
+            "        W1(input)\n" +
+            "}\n" +
+            "workflow {\n" +
+            "    PROC_A(params.input)\n" +
+            "    W1(PROC_A.out)\n" +
+            "    PROC_B(W1.out)\n" +
+            "}\n";
+        // Must complete within a few seconds and not throw
+        ParsedPipeline p = assertTimeoutPreemptively(
+            java.time.Duration.ofSeconds(10),
+            () -> PARSER.parseContent(content),
+            "parseContent() hung on mutually-recursive workflow calls"
+        );
+        assertNotNull(p);
+        // W1 / W2 should not appear as connection endpoints after unfolding
+        p.getConnections().forEach(c ->
+            assertFalse("W1".equals(c[0]) || "W1".equals(c[1]) ||
+                        "W2".equals(c[0]) || "W2".equals(c[1]),
+                "Workflow names should not appear in connections after unfolding, got: " +
+                        connectionList(p.getConnections())));
+    }
+
+    /**
+     * If unfolding would produce a self-loop edge (A → A), that edge must be
+     * silently dropped rather than kept in the connection list.
+     */
+    @Test void testUnfoldingDoesNotProduceSelfLoops() {
+        // PROC_A -> SUBWF where SUBWF.calls contains PROC_A.
+        // Entry of SUBWF = PROC_A (no internal predecessors in {PROC_A}).
+        // Without the fix, this would expand to PROC_A -> PROC_A.
+        String content =
+            "process PROC_A {\n    script:\n    'echo a'\n}\n" +
+            "workflow SUBWF {\n" +
+            "    take: input\n" +
+            "    main:\n" +
+            "        PROC_A(input)\n" +
+            "}\n" +
+            "workflow {\n" +
+            "    PROC_A(params.input)\n" +
+            "    SUBWF(PROC_A.out)\n" +
+            "}\n";
+        ParsedPipeline p = assertTimeoutPreemptively(
+            java.time.Duration.ofSeconds(10),
+            () -> PARSER.parseContent(content),
+            "parseContent() hung on workflow that would produce self-loop"
+        );
+        assertNotNull(p);
+        // No self-loop edge must appear
+        p.getConnections().forEach(c ->
+            assertFalse(c[0].equals(c[1]),
+                "Self-loop edge found in connections: " + c[0] + " -> " + c[1]));
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
