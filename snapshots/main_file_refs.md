@@ -16,6 +16,6 @@ gitGraph LR:
    branch FASTQC
    checkout FASTQC
    commit id: "FASTQC"
-   commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "*.html" tag: "*.zip"
+   commit id: "FASTQC: *" type: HIGHLIGHT tag: "*.html" tag: "*.zip"
    checkout main
 ```

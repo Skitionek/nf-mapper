@@ -8,7 +8,7 @@ title: Workflow Call Branches
 gitGraph LR:
    checkout main
    commit id: "FASTQC"
-   commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "*.html" tag: "*.zip"
+   commit id: "FASTQC: *" type: HIGHLIGHT tag: "*.html" tag: "*.zip"
    branch TRIMGALORE
    checkout TRIMGALORE
    commit id: "TRIMGALORE"

@@ -89,9 +89,9 @@ class SnapshotTest {
         writeSnapshot("simple_workflow", diagram, "nf-mapper/src/test/resources/fixtures/simple_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        // Two outputs: both shown as tags on a single HIGHLIGHT commit
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
-            "Expected both FASTQC output patterns as tags:\n" + diagram);
+        // Two outputs: commit ID is "FASTQC: *", both patterns shown as tags
+        assertTrue(diagram.contains("commit id: \"FASTQC: *\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+            "Expected wildcard commit ID with both FASTQC output patterns as tags:\n" + diagram);
         assertTrue(diagram.contains("commit id: \"MULTIQC\""));
     }
 
@@ -112,9 +112,9 @@ class SnapshotTest {
         writeSnapshot("nf_core_fastqc_module", diagram, "nf-mapper/src/test/resources/fixtures/nf_core_fastqc_module.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        // Two outputs (*.html, *.zip): both shown as tags; versions output is a 3rd → "+1 more"
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
-            "Expected FASTQC output patterns as tags:\n" + diagram);
+        // Two outputs (*.html, *.zip): commit ID is "FASTQC: *", both patterns shown as tags
+        assertTrue(diagram.contains("commit id: \"FASTQC: *\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+            "Expected wildcard commit ID with FASTQC output patterns as tags:\n" + diagram);
     }
 
     @Test

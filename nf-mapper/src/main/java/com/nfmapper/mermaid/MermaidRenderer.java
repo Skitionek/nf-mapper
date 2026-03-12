@@ -179,10 +179,11 @@ public class MermaidRenderer {
         if (channelBranch != null) {
             for (String[] cidExt : channels) channelBranch.put(cidExt[0], currentBranch);
         }
-        // Build the commit: first channel ID as the node ID; show up to 2 full output
-        // patterns as tags; any overflow becomes a "+N more" tag on the third slot.
-        String cid = channels.get(0)[0];
+        // Build the commit: when there are multiple outputs, use "PROC: *" as the commit
+        // ID to signal that it covers several patterns; for a single output, use the exact
+        // channel ID so the node name precisely reflects the one output pattern.
         int n = channels.size();
+        String cid = n == 1 ? channels.get(0)[0] : procName + ": *";
         StringBuilder sb = new StringBuilder("   commit id: \"").append(cid).append("\" type: HIGHLIGHT");
         int tagsToShow = Math.min(n, 2);
         for (int i = 0; i < tagsToShow; i++) {

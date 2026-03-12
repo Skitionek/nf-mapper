@@ -148,9 +148,11 @@ class MermaidRendererTest {
                                         Collections.emptyList(), Collections.emptyList(),
                                         List.of("*.html", "*.zip"));
         String result = RENDERER.render(pipeline(proc));
-        // 2 outputs: both shown as full-pattern tags on a single HIGHLIGHT commit
-        assertTrue(result.contains("\"FASTQC: *.html\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
-            "Expected both output patterns as tags:\n" + result);
+        // 2 outputs: commit ID is "PROC: *", both patterns shown as tags
+        assertTrue(result.contains("\"FASTQC: *\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+            "Expected wildcard commit ID with both output patterns as tags:\n" + result);
+        assertFalse(result.contains("\"FASTQC: *.html\" type: HIGHLIGHT"),
+            "First output pattern should not appear as commit ID:\n" + result);
         assertFalse(result.contains("\"FASTQC: *.zip\" type: HIGHLIGHT"),
             "Second output should not appear as a separate HIGHLIGHT commit:\n" + result);
     }
