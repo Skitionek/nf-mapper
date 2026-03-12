@@ -41,44 +41,32 @@ class RendererThemeMatrixTest {
 
         List<Case> cases = List.of(
                 new Case(
-                        "default + gitgraph + nf-core",
-                        new GitGraphMermaidRenderer(new NfCoreMermaidTheme()),
+                        "default + nf-core",
+                        new MermaidRenderer(new NfCoreMermaidTheme()),
                         singleProcessPipeline(),
                         "'theme': 'base'",
                         "commit id: \"HELLO\""),
                 new Case(
-                        "default + gitgraph + plain",
-                        new GitGraphMermaidRenderer(new PlainMermaidTheme()),
+                        "default + plain",
+                        new MermaidRenderer(new PlainMermaidTheme()),
                         singleProcessPipeline(),
                         "'theme': 'default'",
                         "commit id: \"HELLO\""),
                 new Case(
-                        "metro + metro-map + nf-core",
-                        new MetroMapMermaidRenderer(new NfCoreMermaidTheme()),
-                        singleProcessPipeline(),
-                        "'theme': 'base'",
-                        "commit id: \"HELLO\""),
-                new Case(
-                        "metro + metro-map + plain",
-                        new MetroMapMermaidRenderer(new PlainMermaidTheme()),
-                        singleProcessPipeline(),
-                        "'theme': 'default'",
-                        "commit id: \"HELLO\""),
-                new Case(
-                        "conditional + gitgraph + plain",
+                        "conditional + nf-core",
                         new ConditionalBranchMermaidRenderer(
-                                new GitGraphMermaidRenderer(new PlainMermaidTheme()),
-                                new PlainMermaidTheme()),
-                        conditionalDagPipeline(),
-                        "'theme': 'default'",
-                        "type: REVERSE"),
-                new Case(
-                        "conditional + metro-map + nf-core",
-                        new ConditionalBranchMermaidRenderer(
-                                new MetroMapMermaidRenderer(new NfCoreMermaidTheme()),
+                                new MermaidRenderer(new NfCoreMermaidTheme()),
                                 new NfCoreMermaidTheme()),
                         conditionalDagPipeline(),
                         "'theme': 'base'",
+                        "type: REVERSE"),
+                new Case(
+                        "conditional + plain",
+                        new ConditionalBranchMermaidRenderer(
+                                new MermaidRenderer(new PlainMermaidTheme()),
+                                new PlainMermaidTheme()),
+                        conditionalDagPipeline(),
+                        "'theme': 'default'",
                         "type: REVERSE"));
 
         for (Case testCase : cases) {

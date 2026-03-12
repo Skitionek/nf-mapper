@@ -3,7 +3,7 @@ package com.nfmapper.examples;
 import java.util.Collections;
 import java.util.List;
 
-import com.nfmapper.mermaid.MetroMapMermaidRenderer;
+import com.nfmapper.mermaid.MermaidRenderer;
 import com.nfmapper.model.NfProcess;
 import com.nfmapper.model.ParsedPipeline;
 
@@ -62,8 +62,8 @@ public class MetroMapExample {
                                 Collections.emptyList(),
                                 connections);
 
-                // Render as metro map
-                MetroMapMermaidRenderer renderer = new MetroMapMermaidRenderer();
+                // Render as gitGraph
+                MermaidRenderer renderer = new MermaidRenderer();
 
                 System.out.println("# Metro Map Style (Left-to-Right)");
                 System.out.println();

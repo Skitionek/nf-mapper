@@ -53,7 +53,7 @@ public class NfMapperCli implements Callable<Integer> {
     @Option(names = "--config", paramLabel = "JSON", description = "JSON config overrides for Mermaid rendering.")
     private String configJson;
 
-    @Option(names = "--renderer", defaultValue = "default", paramLabel = "NAME", description = "Renderer strategy: default, conditional, or metro (default: default).")
+    @Option(names = "--renderer", defaultValue = "default", paramLabel = "NAME", description = "Renderer strategy: default or conditional (default: default).")
     private String rendererMode;
 
     @Option(names = "--theme", defaultValue = "nf-core", paramLabel = "NAME", description = "Theme class: nf-core or plain (default: nf-core).")

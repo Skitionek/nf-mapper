@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test;
 
 import com.nfmapper.mermaid.ConditionalBranchMermaidRenderer;
 import com.nfmapper.mermaid.MermaidRenderer;
-import com.nfmapper.mermaid.MetroMapMermaidRenderer;
 import com.nfmapper.model.NfProcess;
 import com.nfmapper.model.NfWorkflow;
 import com.nfmapper.model.ParsedPipeline;
@@ -38,7 +37,6 @@ class SnapshotTest {
 
     private static final NextflowParser PARSER = new NextflowParser();
     private static final ConditionalBranchMermaidRenderer CONDITIONAL_RENDERER = new ConditionalBranchMermaidRenderer();
-    private static final MetroMapMermaidRenderer METRO_RENDERER = new MetroMapMermaidRenderer();
 
     protected MermaidRenderer renderer() {
         return new MermaidRenderer();
@@ -191,17 +189,6 @@ class SnapshotTest {
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("branch if_"),
                 "Expected condition-based branch naming in conditional renderer:\n" + diagram);
-    }
-
-    @Test
-    void testSnapshotMetroRenderer() throws IOException {
-        Assumptions.assumeTrue(runDedicatedRendererSnapshots());
-        ParsedPipeline pipeline = PARSER.parseFile(fixture("complex_workflow.nf"));
-        String diagram = METRO_RENDERER.render(pipeline, "RNA-seq Pipeline (Metro Renderer)", null);
-        writeSnapshot("complex_workflow_metro", "metro", diagram,
-                "nf-mapper/src/test/resources/fixtures/complex_workflow.nf (renderer=metro)");
-        assertTrue(diagram.contains("gitGraph LR:"), "Expected gitGraph syntax for metro renderer");
-        assertFalse(diagram.contains("flowchart"), "Metro renderer should no longer emit flowchart syntax");
     }
 
     // -------------------------------------------------------------------------

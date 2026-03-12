@@ -107,24 +107,16 @@ class CliTest {
     }
 
     @Test
-    void testMetroRendererMode() {
-        String output = runCli(fixture("complex_workflow.nf"), "--renderer", "metro");
-        assertTrue(output.contains("gitGraph LR:"), "Output was:\n" + output);
-        assertTrue(output.contains("commit id: \"STAR_ALIGN\""), "Output was:\n" + output);
-        assertFalse(output.contains("flowchart LR"), "Output was:\n" + output);
-    }
-
-    @Test
     void testInvalidRendererModeReturnsError() {
         int rc = runCliReturnCode(fixture("minimal_process.nf"), "--renderer", "nope");
         assertNotEquals(0, rc);
     }
 
     @Test
-    void testExplicitTransformerRendererAndThemeSelection() {
+    void testExplicitDefaultRendererAndThemeSelection() {
         String output = runCli(
                 fixture("minimal_process.nf"),
-                "--renderer", "metro-map",
+                "--renderer", "default",
                 "--theme", "plain");
         assertTrue(output.contains("gitGraph LR:"), "Output was:\n" + output);
         assertTrue(output.contains("'theme': 'default'"), "Output was:\n" + output);
@@ -137,11 +129,11 @@ class CliTest {
         }
 
         List<Case> cases = List.of(
-                new Case("default + gitgraph + nf-core", "minimal_process.nf", "gitgraph", "nf-core",
+                new Case("default + nf-core", "minimal_process.nf", "default", "nf-core",
                         "'theme': 'base'", "commit id: \"HELLO\""),
-                new Case("metro + metro-map + plain", "minimal_process.nf", "metro-map", "plain",
+                new Case("default + plain", "minimal_process.nf", "default", "plain",
                         "'theme': 'default'", "commit id: \"HELLO\""),
-                new Case("conditional + gitgraph + plain", "if_workflow.nf", "conditional", "plain",
+                new Case("conditional + plain", "if_workflow.nf", "conditional", "plain",
                         "'theme': 'default'", "type: REVERSE"));
 
         for (Case testCase : cases) {
