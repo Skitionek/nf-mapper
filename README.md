@@ -199,145 +199,133 @@ Renderer × theme diagram examples:
 ### default + nf-core
 
 <!-- nf-mapper:selection-default-nfcore pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="default/nf-core" format="md" renderer="default" theme="nf-core" -->
-
 ```mermaid
 ---
 title: default/nf-core
 ---
 %%{init: {'theme': 'base', 'themeVariables': {'git0': '#24B064', 'gitInv0': '#ffffff', 'git1': '#FA7F19', 'gitInv1': '#ffffff', 'git2': '#0570b0', 'gitInv2': '#ffffff', 'git3': '#e63946', 'gitInv3': '#ffffff', 'git4': '#9b59b6', 'gitInv4': '#ffffff', 'git5': '#f5c542', 'gitInv5': '#000000', 'git6': '#1abc9c', 'gitInv6': '#ffffff', 'git7': '#7b2d3b', 'gitInv7': '#ffffff'}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
 gitGraph LR:
-  checkout main
-  commit id: "TRIM" tag: "*.trimmed.fastq.gz"
-  commit id: "ALIGN" tag: "*.bam"
-  commit id: "if: params.run_qc" type: REVERSE
-  branch QC
-  checkout QC
-  cherry-pick id: "ALIGN"
-  commit id: "QC" tag: "*.qc.txt"
-  checkout main
-  commit id: "COUNT" tag: "*.counts.txt"
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch QC
+   checkout QC
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
 ```
-
 <!-- /nf-mapper:selection-default-nfcore -->
 
 ### default + plain
 
 <!-- nf-mapper:selection-default-plain pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="default/plain" format="md" renderer="default" theme="plain" -->
-
 ```mermaid
 ---
 title: default/plain
 ---
 %%{init: {'theme': 'default', 'themeVariables': {}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
 gitGraph LR:
-  checkout main
-  commit id: "TRIM" tag: "*.trimmed.fastq.gz"
-  commit id: "ALIGN" tag: "*.bam"
-  commit id: "if: params.run_qc" type: REVERSE
-  branch QC
-  checkout QC
-  cherry-pick id: "ALIGN"
-  commit id: "QC" tag: "*.qc.txt"
-  checkout main
-  commit id: "COUNT" tag: "*.counts.txt"
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch QC
+   checkout QC
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
 ```
-
 <!-- /nf-mapper:selection-default-plain -->
 
 ### conditional + nf-core
 
 <!-- nf-mapper:selection-conditional-nfcore pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="conditional/nf-core" format="md" renderer="conditional" theme="nf-core" -->
-
 ```mermaid
 ---
 title: conditional/nf-core
 ---
 %%{init: {'theme': 'base', 'themeVariables': {'git0': '#24B064', 'gitInv0': '#ffffff', 'git1': '#FA7F19', 'gitInv1': '#ffffff', 'git2': '#0570b0', 'gitInv2': '#ffffff', 'git3': '#e63946', 'gitInv3': '#ffffff', 'git4': '#9b59b6', 'gitInv4': '#ffffff', 'git5': '#f5c542', 'gitInv5': '#000000', 'git6': '#1abc9c', 'gitInv6': '#ffffff', 'git7': '#7b2d3b', 'gitInv7': '#ffffff'}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
 gitGraph LR:
-  checkout main
-  commit id: "TRIM" tag: "*.trimmed.fastq.gz"
-  commit id: "ALIGN" tag: "*.bam"
-  commit id: "if: params.run_qc" type: REVERSE
-  branch if_params_run_qc
-  checkout if_params_run_qc
-  cherry-pick id: "ALIGN"
-  commit id: "QC" tag: "*.qc.txt"
-  checkout main
-  commit id: "COUNT" tag: "*.counts.txt"
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch if_params_run_qc
+   checkout if_params_run_qc
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
 ```
-
 <!-- /nf-mapper:selection-conditional-nfcore -->
 
 ### conditional + plain
 
 <!-- nf-mapper:selection-conditional-plain pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="conditional/plain" format="md" renderer="conditional" theme="plain" -->
-
 ```mermaid
 ---
 title: conditional/plain
 ---
 %%{init: {'theme': 'default', 'themeVariables': {}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
 gitGraph LR:
-  checkout main
-  commit id: "TRIM" tag: "*.trimmed.fastq.gz"
-  commit id: "ALIGN" tag: "*.bam"
-  commit id: "if: params.run_qc" type: REVERSE
-  branch if_params_run_qc
-  checkout if_params_run_qc
-  cherry-pick id: "ALIGN"
-  commit id: "QC" tag: "*.qc.txt"
-  checkout main
-  commit id: "COUNT" tag: "*.counts.txt"
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch if_params_run_qc
+   checkout if_params_run_qc
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
 ```
-
 <!-- /nf-mapper:selection-conditional-plain -->
 
 ### metro + nf-core
 
 <!-- nf-mapper:selection-metro-nfcore pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="metro/nf-core" format="md" renderer="metro" theme="nf-core" -->
-
 ```mermaid
 ---
 title: metro/nf-core
 ---
 %%{init: {'theme': 'base', 'themeVariables': {'git0': '#24B064', 'gitInv0': '#ffffff', 'git1': '#FA7F19', 'gitInv1': '#ffffff', 'git2': '#0570b0', 'gitInv2': '#ffffff', 'git3': '#e63946', 'gitInv3': '#ffffff', 'git4': '#9b59b6', 'gitInv4': '#ffffff', 'git5': '#f5c542', 'gitInv5': '#000000', 'git6': '#1abc9c', 'gitInv6': '#ffffff', 'git7': '#7b2d3b', 'gitInv7': '#ffffff'}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
 gitGraph LR:
-  checkout main
-  commit id: "TRIM" tag: "*.trimmed.fastq.gz"
-  commit id: "ALIGN" tag: "*.bam"
-  commit id: "if: params.run_qc" type: REVERSE
-  branch QC
-  checkout QC
-  cherry-pick id: "ALIGN"
-  commit id: "QC" tag: "*.qc.txt"
-  checkout main
-  commit id: "COUNT" tag: "*.counts.txt"
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch QC
+   checkout QC
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
 ```
-
 <!-- /nf-mapper:selection-metro-nfcore -->
 
 ### metro + plain
 
 <!-- nf-mapper:selection-metro-plain pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="metro/plain" format="md" renderer="metro" theme="plain" -->
-
 ```mermaid
 ---
 title: metro/plain
 ---
 %%{init: {'theme': 'default', 'themeVariables': {}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
 gitGraph LR:
-  checkout main
-  commit id: "TRIM" tag: "*.trimmed.fastq.gz"
-  commit id: "ALIGN" tag: "*.bam"
-  commit id: "if: params.run_qc" type: REVERSE
-  branch QC
-  checkout QC
-  cherry-pick id: "ALIGN"
-  commit id: "QC" tag: "*.qc.txt"
-  checkout main
-  commit id: "COUNT" tag: "*.counts.txt"
+   checkout main
+   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
+   commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
+   branch QC
+   checkout QC
+   cherry-pick id: "ALIGN"
+   commit id: "QC" tag: "*.qc.txt"
+   checkout main
+   commit id: "COUNT" tag: "*.counts.txt"
 ```
-
 <!-- /nf-mapper:selection-metro-plain -->
 
 ---
@@ -362,7 +350,6 @@ workflow {
 ```
 
 <!-- nf-mapper:example-linear pipeline="nf-mapper/src/test/resources/fixtures/simple_workflow.nf" title="nf-core/rnaseq QC" format="md" -->
-
 ```mermaid
 ---
 title: nf-core/rnaseq QC
@@ -373,7 +360,6 @@ gitGraph LR:
    commit id: "FASTQC" tag: "*.html" tag: "*.zip"
    commit id: "MULTIQC" tag: "multiqc_report.html"
 ```
-
 <!-- /nf-mapper:example-linear -->
 
 ### Branching pipeline _(QC + alignment)_
@@ -398,7 +384,6 @@ workflow RNASEQ {
 ```
 
 <!-- nf-mapper:example-branching pipeline="nf-mapper/src/test/resources/fixtures/complex_workflow.nf" title="RNA-seq Pipeline" format="md" -->
-
 ```mermaid
 ---
 title: RNA-seq Pipeline
@@ -415,7 +400,6 @@ gitGraph LR:
    commit id: "SAMTOOLS_SORT" tag: "*.sorted.bam"
    commit id: "FEATURECOUNTS" tag: "*.counts.txt"
 ```
-
 <!-- /nf-mapper:example-branching -->
 
 ### Real-world example – [nf-core/fetchngs](https://github.com/nf-core/fetchngs)
@@ -425,7 +409,6 @@ nf-mapper workflows/sra/main.nf --title "nf-core/fetchngs SRA"
 ```
 
 <!-- nf-mapper:example-fetchngs pipeline="nf-mapper/src/test/resources/fixtures/nf_core_fetchngs_sra.nf" title="nf-core/fetchngs SRA" format="md" -->
-
 ```mermaid
 ---
 title: nf-core/fetchngs SRA
@@ -456,7 +439,6 @@ gitGraph LR:
    commit id: "if: params.sample_mapping_fields" type: REVERSE
    commit id: "MULTIQC_MAPPINGS_CONFIG"
 ```
-
 <!-- /nf-mapper:example-fetchngs -->
 
 ---
