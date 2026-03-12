@@ -343,4 +343,48 @@ class MermaidRendererTest {
         assertTrue(result.contains("commit id: \"X\""),
             "Process X should appear in output:\n" + result);
     }
+
+    /**
+     * Off-chain nodes that are shared by multiple branches must not be emitted more than once.
+     *
+     * <p>Graph: START → M1 → M2 → M3 → M4 (main path, dist=4), plus two off-chains that
+     * converge: START → BRANCH_A → SHARED → TAIL and START → BRANCH_B → SHARED → TAIL.
+     * SHARED and TAIL are reachable from both BRANCH_A and BRANCH_B but must each appear
+     * in the diagram only once.
+     */
+    @Test void testSharedOffChainNodesAreDeduplicatedAcrossBranches() {
+        NfProcess start   = new NfProcess("START");
+        NfProcess m1      = new NfProcess("M1");
+        NfProcess m2      = new NfProcess("M2");
+        NfProcess m3      = new NfProcess("M3");
+        NfProcess m4      = new NfProcess("M4");
+        NfProcess branchA = new NfProcess("BRANCH_A");
+        NfProcess branchB = new NfProcess("BRANCH_B");
+        NfProcess shared  = new NfProcess("SHARED");
+        NfProcess tail    = new NfProcess("TAIL");
+        ParsedPipeline p = pipeline(
+            List.of(start, m1, m2, m3, m4, branchA, branchB, shared, tail),
+            List.<String[]>of(
+                new String[]{"START",    "M1"},
+                new String[]{"M1",       "M2"},
+                new String[]{"M2",       "M3"},
+                new String[]{"M3",       "M4"},
+                new String[]{"START",    "BRANCH_A"},
+                new String[]{"START",    "BRANCH_B"},
+                new String[]{"BRANCH_A", "SHARED"},
+                new String[]{"BRANCH_B", "SHARED"},
+                new String[]{"SHARED",   "TAIL"}
+            )
+        );
+        String result = RENDERER.render(p);
+        // SHARED and TAIL must each appear exactly once in the output
+        long sharedCount = Arrays.stream(result.split("\n"))
+                .filter(l -> l.contains("commit id: \"SHARED\"")).count();
+        long tailCount = Arrays.stream(result.split("\n"))
+                .filter(l -> l.contains("commit id: \"TAIL\"")).count();
+        assertEquals(1, sharedCount,
+            "SHARED process should be committed exactly once:\n" + result);
+        assertEquals(1, tailCount,
+            "TAIL process should be committed exactly once:\n" + result);
+    }
 }

@@ -463,6 +463,7 @@ public class MermaidRenderer {
             }
 
             for (String offNode : branchHang.getOrDefault(node, Collections.emptyList())) {
+                if (!hasUnemittedNodes(offNode, mainSet, successors, emitted)) continue;
                 String bname = branchName(offNode, usedBranchNames);
                 lines.add("   branch " + bname);
                 lines.add("   checkout " + bname);
@@ -470,7 +471,7 @@ public class MermaidRenderer {
 
                 emitOffChainWithChannels(lines, offNode, mainSet, successors, predecessors,
                                           procLookup, channelBranch, currentBranch[0],
-                                          conditionalInfo);
+                                          conditionalInfo, emitted);
 
                 String mergeTarget = findMergeTarget(offNode, successors, mainSet);
                 if (mergeTarget != null) {
@@ -507,16 +508,39 @@ public class MermaidRenderer {
                                            Map<String, NfProcess> procLookup,
                                            Map<String, String> channelBranch,
                                            String currentBranch,
-                                           Map<String, String[]> conditionalInfo) {
+                                           Map<String, String[]> conditionalInfo,
+                                           Set<String> emitted) {
         Set<String> visited = new LinkedHashSet<>();
         String cur = start;
         while (cur != null && visited.add(cur)) {
-            emitNodeWithChannels(lines, cur, procLookup, predecessors, channelBranch,
-                                  currentBranch, conditionalInfo);
+            if (!emitted.contains(cur)) {
+                emitNodeWithChannels(lines, cur, procLookup, predecessors, channelBranch,
+                                      currentBranch, conditionalInfo);
+                emitted.add(cur);
+            }
             List<String> offSuccs = successors.getOrDefault(cur, Collections.emptyList()).stream()
                     .filter(s -> !mainSet.contains(s)).collect(Collectors.toList());
             cur = offSuccs.isEmpty() ? null : offSuccs.get(0);
         }
+    }
+
+    /**
+     * Returns {@code true} if at least one node in the off-chain starting at {@code start}
+     * (following only non-main-path successors) is not yet in {@code emitted}.
+     * Used to skip creating branches that would produce no new commits.
+     */
+    private boolean hasUnemittedNodes(String start, Set<String> mainSet,
+                                       Map<String, List<String>> successors,
+                                       Set<String> emitted) {
+        Set<String> visited = new LinkedHashSet<>();
+        String cur = start;
+        while (cur != null && visited.add(cur)) {
+            if (!emitted.contains(cur)) return true;
+            List<String> offSuccs = successors.getOrDefault(cur, Collections.emptyList()).stream()
+                    .filter(s -> !mainSet.contains(s)).collect(Collectors.toList());
+            cur = offSuccs.isEmpty() ? null : offSuccs.get(0);
+        }
+        return false;
     }
 
     private String findMergeTarget(String offStart, Map<String, List<String>> successors, Set<String> mainSet) {
