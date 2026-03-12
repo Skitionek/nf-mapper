@@ -516,8 +516,11 @@ public class MermaidRenderer {
 
     private List<String> tracePath(String end, Map<String, String> pred) {
         List<String> path = new ArrayList<>();
+        Set<String> visited = new LinkedHashSet<>();
         String cur = end;
-        while (cur != null) {
+        // Guard against cycles in pathPred (which can occur when the connection graph
+        // contains cycles that survived into the dist-computation pass).
+        while (cur != null && visited.add(cur)) {
             path.add(cur);
             cur = pred.get(cur);
         }

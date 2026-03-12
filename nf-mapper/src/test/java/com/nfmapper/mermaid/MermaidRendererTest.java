@@ -241,4 +241,45 @@ class MermaidRendererTest {
         assertTrue(result.contains("input: *.fastq.gz"),
             "Expected *.fastq.gz file ref:\n" + result);
     }
+
+    // -------------------------------------------------------------------------
+    // Cycle / dead-loop regression tests (OOM in tracePath)
+    // -------------------------------------------------------------------------
+
+    /**
+     * A self-loop edge (A → A) in the connections must not cause an infinite loop
+     * or OOM in renderDag.  The renderer should complete and produce output that
+     * still contains the process commit.
+     */
+    @Test void testSelfLoopConnectionDoesNotHang() {
+        ParsedPipeline p = pipeline(
+            List.of(new NfProcess("A")),
+            List.<String[]>of(new String[]{"A", "A"})
+        );
+        // Must complete without hanging or throwing
+        String result = assertTimeoutPreemptively(
+            java.time.Duration.ofSeconds(5),
+            () -> RENDERER.render(p),
+            "render() hung on a self-loop connection"
+        );
+        assertTrue(result.contains("commit id: \"A\""),
+            "Process A should still appear in output:\n" + result);
+    }
+
+    /**
+     * A two-node cycle (A → B, B → A) must not cause an infinite loop in tracePath.
+     */
+    @Test void testTwoNodeCycleDoesNotHang() {
+        ParsedPipeline p = pipeline(
+            List.of(new NfProcess("A"), new NfProcess("B")),
+            List.<String[]>of(new String[]{"A", "B"}, new String[]{"B", "A"})
+        );
+        String result = assertTimeoutPreemptively(
+            java.time.Duration.ofSeconds(5),
+            () -> RENDERER.render(p),
+            "render() hung on a two-node cycle"
+        );
+        assertTrue(result.contains("commit id: \"A\"") || result.contains("commit id: \"B\""),
+            "At least one process should appear in output:\n" + result);
+    }
 }
