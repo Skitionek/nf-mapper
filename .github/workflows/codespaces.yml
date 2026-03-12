@@ -1,4 +1,6 @@
 name: Codespaces Prebuild
+permissions:
+    contents: read
 
 on:
     push:
