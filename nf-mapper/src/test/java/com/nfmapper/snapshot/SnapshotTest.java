@@ -89,7 +89,9 @@ class SnapshotTest {
         writeSnapshot("simple_workflow", diagram, "nf-mapper/src/test/resources/fixtures/simple_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"html\""));
+        // Multiple outputs are aggregated into a single HIGHLIGHT commit with "+1 more" tag
+        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"+1 more\""),
+            "Expected aggregated HIGHLIGHT commit for FASTQC:\n" + diagram);
         assertTrue(diagram.contains("commit id: \"MULTIQC\""));
     }
 
@@ -110,8 +112,11 @@ class SnapshotTest {
         writeSnapshot("nf_core_fastqc_module", diagram, "nf-mapper/src/test/resources/fixtures/nf_core_fastqc_module.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"html\""));
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.zip\" type: HIGHLIGHT tag: \"zip\""));
+        // Multiple outputs are aggregated into a single HIGHLIGHT commit with "+1 more" tag
+        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"+1 more\""),
+            "Expected aggregated HIGHLIGHT for FASTQC:\n" + diagram);
+        assertFalse(diagram.contains("commit id: \"FASTQC: *.zip\" type: HIGHLIGHT"),
+            "Second output should be aggregated, not emitted separately:\n" + diagram);
     }
 
     @Test

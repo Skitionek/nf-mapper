@@ -145,8 +145,11 @@ class MermaidRendererTest {
                                         Collections.emptyList(), Collections.emptyList(),
                                         List.of("*.html", "*.zip"));
         String result = RENDERER.render(pipeline(proc));
-        assertTrue(result.contains("\"FASTQC: *.html\" type: HIGHLIGHT tag: \"html\""));
-        assertTrue(result.contains("\"FASTQC: *.zip\" type: HIGHLIGHT tag: \"zip\""));
+        // Multiple outputs are aggregated into a single HIGHLIGHT commit
+        assertTrue(result.contains("\"FASTQC: *.html\" type: HIGHLIGHT tag: \"+1 more\""),
+            "Expected aggregated HIGHLIGHT with '+1 more' tag:\n" + result);
+        assertFalse(result.contains("\"FASTQC: *.zip\" type: HIGHLIGHT"),
+            "Second output should be aggregated, not emitted separately:\n" + result);
     }
 
     @Test void testBranchNamedAfterProcess() {
