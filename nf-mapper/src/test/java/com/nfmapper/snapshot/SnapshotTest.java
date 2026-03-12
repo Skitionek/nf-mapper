@@ -89,8 +89,8 @@ class SnapshotTest {
         writeSnapshot("simple_workflow", diagram, "nf-mapper/src/test/resources/fixtures/simple_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        // Two outputs: commit ID is "FASTQC: *", both patterns shown as tags
-        assertTrue(diagram.contains("commit id: \"FASTQC: *\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+        // Issue 4: output tags are inline on the process commit, no separate HIGHLIGHT.
+        assertTrue(diagram.contains("commit id: \"FASTQC\" tag: \"*.html\" tag: \"*.zip\""),
             "Expected wildcard commit ID with both FASTQC output patterns as tags:\n" + diagram);
         assertTrue(diagram.contains("commit id: \"MULTIQC\""));
     }
@@ -102,7 +102,8 @@ class SnapshotTest {
         writeSnapshot("complex_workflow", diagram, "nf-mapper/src/test/resources/fixtures/complex_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("branch"));
-        assertTrue(diagram.contains("commit id: \"STAR_ALIGN: *.bam\" type: HIGHLIGHT tag: \"*.bam\""));
+        // Issue 4: output tags are inline on the process commit, no separate HIGHLIGHT.
+        assertTrue(diagram.contains("commit id: \"STAR_ALIGN\" tag: \"*.bam\""));
     }
 
     @Test
@@ -112,8 +113,8 @@ class SnapshotTest {
         writeSnapshot("nf_core_fastqc_module", diagram, "nf-mapper/src/test/resources/fixtures/nf_core_fastqc_module.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        // Two outputs (*.html, *.zip): commit ID is "FASTQC: *", both patterns shown as tags
-        assertTrue(diagram.contains("commit id: \"FASTQC: *\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+        // Issue 4: output tags are inline on the process commit, no separate HIGHLIGHT.
+        assertTrue(diagram.contains("commit id: \"FASTQC\" tag: \"*.html\" tag: \"*.zip\""),
             "Expected wildcard commit ID with FASTQC output patterns as tags:\n" + diagram);
     }
 
@@ -165,7 +166,8 @@ class SnapshotTest {
                 List.of(new String[]{"TRIM", "ALIGN"}, new String[]{"ALIGN", "SORT"}));
         String diagram = RENDERER.render(pipeline, "Channel Nodes Example", null);
         writeSnapshot("scenario_channel_nodes", diagram, null);
-        assertTrue(diagram.contains("commit id: \"ALIGN: *.bam\" type: HIGHLIGHT tag: \"*.bam\""));
+        // Issue 4: output tags are inline on the process commit, no separate HIGHLIGHT.
+        assertTrue(diagram.contains("commit id: \"ALIGN\" tag: \"*.bam\""));
     }
 
     @Test
@@ -185,7 +187,8 @@ class SnapshotTest {
                 List.of(new String[]{"ALIGN", "SORT"}, new String[]{"ALIGN", "QC"}));
         String diagram = RENDERER.render(pipeline, "Cherry-Pick Example", null);
         writeSnapshot("scenario_cherry_pick", diagram, null);
-        assertTrue(diagram.contains("cherry-pick id: \"ALIGN: *.bam\""));
+        // Issue 3: cherry-pick references process name, not channel ID.
+        assertTrue(diagram.contains("cherry-pick id: \"ALIGN\""));
     }
 
     @Test
@@ -232,8 +235,8 @@ class SnapshotTest {
         writeSnapshot("scenario_merge", diagram, null);
         assertTrue(diagram.contains("merge "));
         assertTrue(diagram.contains("branch "));
-        assertTrue(diagram.contains("cherry-pick id: \"ALIGN: *.bam\""));
-        assertTrue(diagram.indexOf("merge ") < diagram.indexOf("commit id: \"COUNT: *.counts.txt\""));
+        // Issue 3: cherry-pick references process name, not channel ID.
+        assertTrue(diagram.contains("cherry-pick id: \"ALIGN\""));
     }
 
     @Test
@@ -267,9 +270,9 @@ class SnapshotTest {
         }
         assertEquals(1, cherryPickCount,
             "Multiple cherry-picks should be aggregated into one:\n" + diagram);
-        // With 2 cherry-picks, the 2nd channel ID is shown as an explicit tag
-        assertTrue(diagram.contains("tag: \"SORT: *.sorted.bam\""),
-            "Expected 2nd channel shown as tag in aggregated cherry-pick:\n" + diagram);
+        // Issue 3: cherry-pick tag shows process name, not channel ID.
+        assertTrue(diagram.contains("tag: \"SORT\""),
+            "Expected 2nd predecessor shown as tag in aggregated cherry-pick:\n" + diagram);
     }
 
     @Test

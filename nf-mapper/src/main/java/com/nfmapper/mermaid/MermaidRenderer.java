@@ -143,16 +143,27 @@ public class MermaidRenderer {
         return null;
     }
 
-    private List<String[]> channelIdsWithExt(String procName, Map<String, NfProcess> procLookup) {
+    /**
+     * Build a tag-suffix string for the output patterns of {@code procName}, suitable for
+     * appending directly to a {@code commit id: "..."} line.  Returns an empty string when
+     * the process has no outputs.  Up to 2 patterns are listed as explicit tags; any
+     * additional outputs are summarised as {@code "+N more"}.
+     */
+    private String buildOutputTagsSuffix(String procName, Map<String, NfProcess> procLookup) {
         NfProcess proc = procLookup.get(procName);
-        if (proc == null) return Collections.emptyList();
-        List<String[]> result = new ArrayList<>();
-        for (String pattern : proc.getOutputs()) {
-            String cid = procName + ": " + pattern;
-            String ext = fileExtension(pattern);
-            result.add(new String[]{cid, ext});
+        if (proc == null || proc.getOutputs().isEmpty()) return "";
+        List<String> outputs = proc.getOutputs();
+        int n = outputs.size();
+        StringBuilder sb = new StringBuilder();
+        int tagsToShow = Math.min(n, 2);
+        for (int i = 0; i < tagsToShow; i++) {
+            sb.append(" tag: \"").append(outputs.get(i)).append("\"");
         }
-        return result;
+        int remaining = n - tagsToShow;
+        if (remaining > 0) {
+            sb.append(" tag: \"+").append(remaining).append(" more\"");
+        }
+        return sb.toString();
     }
 
     /**
@@ -184,46 +195,24 @@ public class MermaidRenderer {
     }
 
     /**
-     * Emit a single aggregated HIGHLIGHT commit for the outputs of {@code procName}.
-     * Up to 2 output patterns are shown as tags (full name, e.g. {@code *.yml});
-     * any further outputs are summarised as a {@code +N more} tag on the third slot.
-     * All channel IDs are registered in {@code channelBranch} (when non-null) so that
-     * downstream cherry-pick logic can still discover them.
+     * Register the process name in {@code channelBranch} so that downstream cherry-pick
+     * detection can find which branch it was produced on.  Only registers when the process
+     * has at least one output pattern (processes with no outputs cannot be cherry-picked).
      *
      * @param channelBranch branch-tracking map; may be {@code null} when branch tracking
      *                      is not required (e.g. flat rendering, which has no cherry-picks)
      * @param currentBranch the branch currently being written to; ignored when
      *                      {@code channelBranch} is {@code null}
      */
-    private void emitAggregatedChannelHighlights(List<String> lines,
-                                                   String procName,
-                                                   Map<String, NfProcess> procLookup,
-                                                   Map<String, String> channelBranch,
-                                                   String currentBranch) {
-        List<String[]> channels = channelIdsWithExt(procName, procLookup);
-        if (channels.isEmpty()) return;
-        // Register all channel IDs in the branch map so downstream processes can
-        // discover which branch they were produced on (used by cherry-pick detection).
-        if (channelBranch != null) {
-            for (String[] cidExt : channels) channelBranch.put(cidExt[0], currentBranch);
+    private void registerChannelBranch(String procName,
+                                        Map<String, NfProcess> procLookup,
+                                        Map<String, String> channelBranch,
+                                        String currentBranch) {
+        if (channelBranch == null) return;
+        NfProcess proc = procLookup.get(procName);
+        if (proc != null && !proc.getOutputs().isEmpty()) {
+            channelBranch.put(procName, currentBranch);
         }
-        // Build the commit: when there are multiple outputs, use "PROC: *" as the commit
-        // ID to signal that it covers several patterns; for a single output, use the exact
-        // channel ID so the node name precisely reflects the one output pattern.
-        int n = channels.size();
-        String cid = n == 1 ? channels.get(0)[0] : procName + ": *";
-        StringBuilder sb = new StringBuilder("   commit id: \"").append(cid).append("\" type: HIGHLIGHT");
-        int tagsToShow = Math.min(n, 2);
-        for (int i = 0; i < tagsToShow; i++) {
-            // Extract the raw pattern from the channel ID ("PROC: *.pattern" → "*.pattern")
-            String pattern = channels.get(i)[0].substring(procName.length() + 2);
-            sb.append(" tag: \"").append(pattern).append("\"");
-        }
-        int remaining = n - tagsToShow;
-        if (remaining > 0) {
-            sb.append(" tag: \"+").append(remaining).append(" more\"");
-        }
-        lines.add(sb.toString());
     }
 
     /**
@@ -231,15 +220,21 @@ public class MermaidRenderer {
      * The full sequence per process is:
      * <ol>
      *   <li>Input-file HIGHLIGHT – string-literal {@code path("pattern")} entries from
-     *       the process {@code input:} block (omitted when the process has no such inputs).</li>
-     *   <li>Cherry-pick – aggregated reference to predecessor channels committed on a
-     *       different branch (omitted when all predecessors are on the same branch).</li>
+     *       the process {@code input:} block; <em>suppressed</em> when every input pattern
+     *       is already produced by a direct predecessor (issue 1).</li>
+     *   <li>Cherry-pick – aggregated reference to predecessor processes committed on a
+     *       different branch (omitted when all predecessors are on the same branch).
+     *       References the process name directly (issue 3).</li>
      *   <li>Optional {@code type: REVERSE} commit if the call is inside an {@code if}
-     *       block (the "if-statement node").</li>
-     *   <li>The process commit itself.</li>
-     *   <li>Output-file HIGHLIGHT – aggregated {@code path("pattern")} entries from the
-     *       process {@code output:} block.</li>
+     *       block; uses {@code "if: conditionText"} as the commit ID. Skipped when the
+     *       node's conditional group is already in {@code preEmittedGroups} (meaning the
+     *       if-node was emitted on the parent branch before the {@code branch} declaration).</li>
+     *   <li>The process commit with output patterns as inline tags (issue 4).</li>
      * </ol>
+     *
+     * @param preEmittedGroups set of conditional groupIds whose {@code if:} REVERSE commit
+     *                         was already emitted before the branch declaration; nodes in
+     *                         these groups skip the inline REVERSE emit.
      */
     private void emitNodeWithChannels(List<String> lines,
                                        String procName,
@@ -247,28 +242,39 @@ public class MermaidRenderer {
                                        Map<String, List<String>> predecessors,
                                        Map<String, String> channelBranch,
                                        String currentBranch,
-                                       Map<String, String[]> conditionalInfo) {
-        // 1. Input-file HIGHLIGHT (files accessed directly from the filesystem)
-        emitAggregatedInputHighlights(lines, procName, procLookup);
-
-        // 2. Collect predecessor channels committed on a different branch, then emit a
-        //    single aggregated cherry-pick to reduce visual clutter.  The second channel
-        //    ID (if any) is shown as an explicit tag; further ones are summarised as
-        //    "+N more" on a second tag slot.
-        List<String> cherryPickIds = new ArrayList<>();
-        for (String src : predecessors.getOrDefault(procName, Collections.emptyList())) {
-            for (String[] cidExt : channelIdsWithExt(src, procLookup)) {
-                String cid = cidExt[0];
-                if (channelBranch.containsKey(cid) && !channelBranch.get(cid).equals(currentBranch)) {
-                    cherryPickIds.add(cid);
+                                       Map<String, String[]> conditionalInfo,
+                                       Set<String> preEmittedGroups) {
+        // 1. Input-file HIGHLIGHT – suppress when all inputs are covered by predecessor outputs.
+        boolean suppressInput = false;
+        NfProcess proc = procLookup.get(procName);
+        if (proc != null && !proc.getInputs().isEmpty()) {
+            List<String> preds = predecessors.getOrDefault(procName, Collections.emptyList());
+            if (!preds.isEmpty()) {
+                Set<String> predOutputs = new LinkedHashSet<>();
+                for (String pred : preds) {
+                    NfProcess predProc = procLookup.get(pred);
+                    if (predProc != null) predOutputs.addAll(predProc.getOutputs());
                 }
+                suppressInput = predOutputs.containsAll(proc.getInputs());
             }
         }
-        if (!cherryPickIds.isEmpty()) {
-            StringBuilder sb = new StringBuilder("   cherry-pick id: \"").append(cherryPickIds.get(0)).append("\"");
-            int extras = cherryPickIds.size() - 1;
+        if (!suppressInput) {
+            emitAggregatedInputHighlights(lines, procName, procLookup);
+        }
+
+        // 2. Collect predecessor processes committed on a different branch, then emit a
+        //    single aggregated cherry-pick.  References process names directly (issue 3).
+        List<String> cherryPickProcs = new ArrayList<>();
+        for (String src : predecessors.getOrDefault(procName, Collections.emptyList())) {
+            if (channelBranch.containsKey(src) && !channelBranch.get(src).equals(currentBranch)) {
+                cherryPickProcs.add(src);
+            }
+        }
+        if (!cherryPickProcs.isEmpty()) {
+            StringBuilder sb = new StringBuilder("   cherry-pick id: \"").append(cherryPickProcs.get(0)).append("\"");
+            int extras = cherryPickProcs.size() - 1;
             if (extras >= 1) {
-                sb.append(" tag: \"").append(cherryPickIds.get(1)).append("\"");
+                sb.append(" tag: \"").append(cherryPickProcs.get(1)).append("\"");
             }
             if (extras > 1) {
                 sb.append(" tag: \"+").append(extras - 1).append(" more\"");
@@ -276,17 +282,31 @@ public class MermaidRenderer {
             lines.add(sb.toString());
         }
 
-        // 3. If-statement node (for conditional calls) – one per process, always unique
+        // 3. If-statement node – emit "if: condText" REVERSE, unless already emitted on the
+        //    parent branch before the branch declaration.
         String[] condInfo = conditionalInfo.get(procName);
-        if (condInfo != null) {
-            lines.add("   commit id: \"if: " + procName + "\" type: REVERSE");
+        if (condInfo != null && !preEmittedGroups.contains(condInfo[0])) {
+            lines.add("   commit id: \"if: " + condInfo[1] + "\" type: REVERSE");
         }
 
-        // 4. Process commit
-        lines.add("   commit id: \"" + procName + "\"");
+        // 4. Process commit with output patterns as inline tags (issue 4 – no separate HIGHLIGHT).
+        String outputTags = buildOutputTagsSuffix(procName, procLookup);
+        lines.add("   commit id: \"" + procName + "\"" + outputTags);
 
-        // 5. Output channel HIGHLIGHT commits (aggregated into one when there are multiple)
-        emitAggregatedChannelHighlights(lines, procName, procLookup, channelBranch, currentBranch);
+        // Register this process in channelBranch for downstream cherry-pick detection.
+        registerChannelBranch(procName, procLookup, channelBranch, currentBranch);
+    }
+
+    /** Overload without {@code preEmittedGroups} – treats all conditional nodes as inline. */
+    private void emitNodeWithChannels(List<String> lines,
+                                       String procName,
+                                       Map<String, NfProcess> procLookup,
+                                       Map<String, List<String>> predecessors,
+                                       Map<String, String> channelBranch,
+                                       String currentBranch,
+                                       Map<String, String[]> conditionalInfo) {
+        emitNodeWithChannels(lines, procName, procLookup, predecessors, channelBranch,
+                             currentBranch, conditionalInfo, Collections.emptySet());
     }
 
     // -------------------------------------------------------------------------
@@ -388,33 +408,49 @@ public class MermaidRenderer {
         // Emit file references from workflow main blocks before any process commits
         emitMainFileRefCommits(lines, pipeline);
 
-        // First segment always goes on main
-        emitFlatSegment(lines, segments.get(0), "main", procLookup, conditionalInfo);
+        Set<String> preEmittedGroups = new LinkedHashSet<>();
 
-        // Remaining segments each get their own branch named after their first process
+        // First segment always goes on main
+        emitFlatSegment(lines, segments.get(0), "main", procLookup, conditionalInfo, preEmittedGroups);
+
+        // Remaining segments each get their own branch named after their first process.
+        // For conditional segments, the "if:" REVERSE node is emitted on the current (main)
+        // branch BEFORE the branch declaration so the branch visually diverges from the if-node.
         for (int i = 1; i < segments.size(); i++) {
             List<String> seg = segments.get(i);
             String firstName = seg.get(0);
+
+            // If this segment is conditional, emit the if-node on the current branch first.
+            String[] ci = conditionalInfo.get(firstName);
+            if (ci != null && preEmittedGroups.add(ci[0])) {
+                lines.add("   commit id: \"if: " + ci[1] + "\" type: REVERSE");
+                // Mark all members of this group so emitFlatSegment skips their inline REVERSE.
+                for (String member : seg) preEmittedGroups.add(conditionalInfo.get(member)[0]);
+            }
+
             String bname = branchName(firstName, usedBranchNames);
             lines.add("   branch " + bname);
             lines.add("   checkout " + bname);
-            emitFlatSegment(lines, seg, bname, procLookup, conditionalInfo);
+            emitFlatSegment(lines, seg, bname, procLookup, conditionalInfo, preEmittedGroups);
             lines.add("   checkout main");
         }
     }
 
     private void emitFlatSegment(List<String> lines, List<String> names, String branchName,
                                   Map<String, NfProcess> procLookup,
-                                  Map<String, String[]> conditionalInfo) {
+                                  Map<String, String[]> conditionalInfo,
+                                  Set<String> preEmittedGroups) {
         for (String name : names) {
             // Input-file HIGHLIGHT (string-literal path patterns from the input: block)
             emitAggregatedInputHighlights(lines, name, procLookup);
-            // If-statement node for conditional calls – one per process, always unique
-            if (conditionalInfo.containsKey(name)) {
-                lines.add("   commit id: \"if: " + name + "\" type: REVERSE");
+            // If-statement node – skip if this group's if-node was emitted before the branch
+            String[] ci = conditionalInfo.get(name);
+            if (ci != null && !preEmittedGroups.contains(ci[0])) {
+                lines.add("   commit id: \"if: " + ci[1] + "\" type: REVERSE");
             }
-            lines.add("   commit id: \"" + name + "\"");
-            emitAggregatedChannelHighlights(lines, name, procLookup, null, null);
+            // Process commit with output tags inline (issue 4 – no separate HIGHLIGHT)
+            String outputTags = buildOutputTagsSuffix(name, procLookup);
+            lines.add("   commit id: \"" + name + "\"" + outputTags);
         }
     }
 
@@ -490,6 +526,9 @@ public class MermaidRenderer {
 
         Set<String> emitted = new LinkedHashSet<>();
         final String[] currentBranch = {"main"};
+        // Track conditional groups whose "if:" REVERSE commit has already been emitted
+        // on the parent branch, so subsequent branches from the same group don't repeat it.
+        Set<String> emittedConditionalGroups = new LinkedHashSet<>();
 
         // Emit file references from workflow main blocks before the first process commit
         emitMainFileRefCommits(lines, pipeline);
@@ -503,6 +542,21 @@ public class MermaidRenderer {
 
             for (String offNode : branchHang.getOrDefault(node, Collections.emptyList())) {
                 if (!hasUnemittedNodes(offNode, mainSet, successors, emitted)) continue;
+
+                // If the starting off-chain node is conditional, emit the "if:" REVERSE commit
+                // on the current (parent) branch BEFORE declaring the new branch.
+                // The same condition group's REVERSE is emitted at most once (for the first
+                // branch), so that multiple branches from one if-block share a single if-node.
+                Set<String> preEmittedGroups = new LinkedHashSet<>();
+                String[] condForOff = conditionalInfo.get(offNode);
+                if (condForOff != null) {
+                    String groupId = condForOff[0];
+                    if (emittedConditionalGroups.add(groupId)) {
+                        lines.add("   commit id: \"if: " + condForOff[1] + "\" type: REVERSE");
+                    }
+                    preEmittedGroups.add(groupId);
+                }
+
                 String bname = branchName(offNode, usedBranchNames);
                 lines.add("   branch " + bname);
                 lines.add("   checkout " + bname);
@@ -510,7 +564,7 @@ public class MermaidRenderer {
 
                 emitOffChainWithChannels(lines, offNode, mainSet, successors, predecessors,
                                           procLookup, channelBranch, currentBranch[0],
-                                          conditionalInfo, emitted);
+                                          conditionalInfo, emitted, preEmittedGroups);
 
                 String mergeTarget = findMergeTarget(offNode, successors, mainSet);
                 if (mergeTarget != null) {
@@ -529,8 +583,8 @@ public class MermaidRenderer {
                     }
                     lines.add("   merge " + bname);
                     emitted.add(mergeTarget);
-                    emitAggregatedChannelHighlights(lines, mergeTarget, procLookup,
-                                                    channelBranch, currentBranch[0]);
+                    // Register merge-target outputs in channelBranch without emitting a HIGHLIGHT.
+                    registerChannelBranch(mergeTarget, procLookup, channelBranch, currentBranch[0]);
                 } else {
                     lines.add("   checkout main");
                     currentBranch[0] = "main";
@@ -548,13 +602,14 @@ public class MermaidRenderer {
                                            Map<String, String> channelBranch,
                                            String currentBranch,
                                            Map<String, String[]> conditionalInfo,
-                                           Set<String> emitted) {
+                                           Set<String> emitted,
+                                           Set<String> preEmittedGroups) {
         Set<String> visited = new LinkedHashSet<>();
         String cur = start;
         while (cur != null && visited.add(cur)) {
             if (!emitted.contains(cur)) {
                 emitNodeWithChannels(lines, cur, procLookup, predecessors, channelBranch,
-                                      currentBranch, conditionalInfo);
+                                      currentBranch, conditionalInfo, preEmittedGroups);
                 emitted.add(cur);
             }
             List<String> offSuccs = successors.getOrDefault(cur, Collections.emptyList()).stream()

@@ -14,10 +14,7 @@ gitGraph LR:
    checkout FASTQC
    commit id: "FASTQC"
    checkout main
-   commit id: "STAR_ALIGN"
-   commit id: "STAR_ALIGN: *.bam" type: HIGHLIGHT tag: "*.bam"
-   commit id: "SAMTOOLS_SORT"
-   commit id: "SAMTOOLS_SORT: *.sorted.bam" type: HIGHLIGHT tag: "*.sorted.bam"
-   commit id: "FEATURECOUNTS"
-   commit id: "FEATURECOUNTS: *.counts.txt" type: HIGHLIGHT tag: "*.counts.txt"
+   commit id: "STAR_ALIGN" tag: "*.bam"
+   commit id: "SAMTOOLS_SORT" tag: "*.sorted.bam"
+   commit id: "FEATURECOUNTS" tag: "*.counts.txt"
 ```
