@@ -343,4 +343,140 @@ class MermaidRendererTest {
         assertTrue(result.contains("commit id: \"X\""),
             "Process X should appear in output:\n" + result);
     }
+
+    /**
+     * Off-chain nodes that are shared by multiple branches must not be emitted more than once.
+     *
+     * <p>Graph: START → M1 → M2 → M3 → M4 (main path, dist=4), plus two off-chains that
+     * converge: START → BRANCH_A → SHARED → TAIL and START → BRANCH_B → SHARED → TAIL.
+     * SHARED and TAIL are reachable from both BRANCH_A and BRANCH_B but must each appear
+     * in the diagram only once.
+     */
+    @Test void testSharedOffChainNodesAreDeduplicatedAcrossBranches() {
+        NfProcess start   = new NfProcess("START");
+        NfProcess m1      = new NfProcess("M1");
+        NfProcess m2      = new NfProcess("M2");
+        NfProcess m3      = new NfProcess("M3");
+        NfProcess m4      = new NfProcess("M4");
+        NfProcess branchA = new NfProcess("BRANCH_A");
+        NfProcess branchB = new NfProcess("BRANCH_B");
+        NfProcess shared  = new NfProcess("SHARED");
+        NfProcess tail    = new NfProcess("TAIL");
+        ParsedPipeline p = pipeline(
+            List.of(start, m1, m2, m3, m4, branchA, branchB, shared, tail),
+            List.<String[]>of(
+                new String[]{"START",    "M1"},
+                new String[]{"M1",       "M2"},
+                new String[]{"M2",       "M3"},
+                new String[]{"M3",       "M4"},
+                new String[]{"START",    "BRANCH_A"},
+                new String[]{"START",    "BRANCH_B"},
+                new String[]{"BRANCH_A", "SHARED"},
+                new String[]{"BRANCH_B", "SHARED"},
+                new String[]{"SHARED",   "TAIL"}
+            )
+        );
+        String result = RENDERER.render(p);
+        // SHARED and TAIL must each appear exactly once in the output
+        long sharedCount = Arrays.stream(result.split("\n"))
+                .filter(l -> l.contains("commit id: \"SHARED\"")).count();
+        long tailCount = Arrays.stream(result.split("\n"))
+                .filter(l -> l.contains("commit id: \"TAIL\"")).count();
+        assertEquals(1, sharedCount,
+            "SHARED process should be committed exactly once:\n" + result);
+        assertEquals(1, tailCount,
+            "TAIL process should be committed exactly once:\n" + result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Input HIGHLIGHT tests
+    // -------------------------------------------------------------------------
+
+    /**
+     * A process with a single string-literal input path pattern should emit an input
+     * HIGHLIGHT commit before the process commit.
+     */
+    @Test void testSingleInputPatternEmittedAsHighlight() {
+        NfProcess proc = new NfProcess("ALIGN",
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                List.of("*.fastq.gz"),   // inputs
+                List.of("*.bam"));       // outputs
+        String result = RENDERER.render(pipeline(proc));
+        // Input HIGHLIGHT commit should appear before the process commit
+        assertTrue(result.contains("commit id: \"ALIGN: input: *.fastq.gz\" type: HIGHLIGHT tag: \"*.fastq.gz\""),
+            "Expected single-input HIGHLIGHT:\n" + result);
+        int inputIdx = result.indexOf("ALIGN: input: *.fastq.gz");
+        int procIdx  = result.indexOf("commit id: \"ALIGN\"");
+        assertTrue(inputIdx < procIdx,
+            "Input HIGHLIGHT should appear before the process commit:\n" + result);
+    }
+
+    /**
+     * A process with multiple input patterns should emit a single aggregated HIGHLIGHT
+     * commit with all patterns shown (up to 2 explicit tags, overflow as +N more).
+     */
+    @Test void testMultipleInputPatternsAreAggregated() {
+        NfProcess proc = new NfProcess("PROC",
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                List.of("*.fastq.gz", "reference.fa", "annotation.gtf"),  // 3 inputs
+                Collections.emptyList());
+        String result = RENDERER.render(pipeline(proc));
+        // Commit ID uses wildcard when there are multiple inputs
+        assertTrue(result.contains("commit id: \"PROC: input: *\" type: HIGHLIGHT"),
+            "Expected wildcard commit ID for multiple inputs:\n" + result);
+        // First two patterns shown as explicit tags
+        assertTrue(result.contains("tag: \"*.fastq.gz\""),
+            "Expected first input pattern as tag:\n" + result);
+        assertTrue(result.contains("tag: \"reference.fa\""),
+            "Expected second input pattern as tag:\n" + result);
+        // Third pattern summarised as +1 more
+        assertTrue(result.contains("tag: \"+1 more\""),
+            "Expected overflow tag for third input:\n" + result);
+    }
+
+    /**
+     * A process with no input patterns (only variable-name inputs, which are not
+     * collected by the parser) should NOT emit an input HIGHLIGHT commit.
+     */
+    @Test void testProcessWithNoInputsEmitsNoInputHighlight() {
+        NfProcess proc = new NfProcess("FASTQC",
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(),   // no string-literal input patterns
+                List.of("*.html", "*.zip"));
+        String result = RENDERER.render(pipeline(proc));
+        assertFalse(result.contains("input:"),
+            "Should not emit input HIGHLIGHT when process has no string-literal input patterns:\n" + result);
+    }
+
+    /**
+     * In DAG rendering the input HIGHLIGHT should appear before the cherry-pick and
+     * the process commit.
+     */
+    @Test void testInputHighlightBeforeCherryPickInDagRendering() {
+        NfProcess align = new NfProcess("ALIGN",
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(),
+                List.of("*.bam"));
+        // SORT has a string-literal input and takes ALIGN's output channel
+        NfProcess sort = new NfProcess("SORT",
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                List.of("*.bam"),          // inputs
+                List.of("*.sorted.bam"));
+        NfProcess qc = new NfProcess("QC");
+        // ALIGN → QC (main path); ALIGN → SORT (branch)
+        ParsedPipeline p = pipeline(
+            List.of(align, sort, qc),
+            List.of(new String[]{"ALIGN", "QC"}, new String[]{"ALIGN", "SORT"}));
+        String result = RENDERER.render(p);
+        // SORT branch should have: input HIGHLIGHT, then cherry-pick, then SORT commit
+        int inputIdx      = result.indexOf("SORT: input: *.bam");
+        int cherryPickIdx = result.indexOf("cherry-pick");
+        int sortCommitIdx = result.indexOf("commit id: \"SORT\"");
+        assertTrue(inputIdx >= 0,
+            "Expected input HIGHLIGHT for SORT:\n" + result);
+        assertTrue(inputIdx < cherryPickIdx,
+            "Input HIGHLIGHT should appear before cherry-pick:\n" + result);
+        assertTrue(cherryPickIdx < sortCommitIdx,
+            "Cherry-pick should appear before process commit:\n" + result);
+    }
 }
