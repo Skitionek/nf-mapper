@@ -171,14 +171,24 @@ public class MermaidRenderer {
                                        Map<String, String> channelBranch,
                                        String currentBranch,
                                        Map<String, String[]> conditionalInfo) {
-        // 1. Cherry-pick predecessor channels committed on different branch
+        // 1. Collect predecessor channels committed on a different branch, then emit a
+        //    single aggregated cherry-pick to reduce visual clutter.  When more than one
+        //    channel needs to be cherry-picked the first ID is used and a "+N more" tag
+        //    summarises the remaining ones.
+        List<String> cherryPickIds = new ArrayList<>();
         for (String src : predecessors.getOrDefault(procName, Collections.emptyList())) {
             for (String[] cidExt : channelIdsWithExt(src, procLookup)) {
                 String cid = cidExt[0];
                 if (channelBranch.containsKey(cid) && !channelBranch.get(cid).equals(currentBranch)) {
-                    lines.add("   cherry-pick id: \"" + cid + "\"");
+                    cherryPickIds.add(cid);
                 }
             }
+        }
+        if (!cherryPickIds.isEmpty()) {
+            String cid = cherryPickIds.get(0);
+            int extras = cherryPickIds.size() - 1;
+            String tagPart = extras > 0 ? " tag: \"+" + extras + " more\"" : "";
+            lines.add("   cherry-pick id: \"" + cid + "\"" + tagPart);
         }
 
         // 2. If-statement node (for conditional calls) – one per process, always unique
