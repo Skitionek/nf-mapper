@@ -146,7 +146,10 @@ public class NextflowParser {
         collectWorkflowCalls(wf.main, knownProcesses, channelVarMap, calls, connections,
                              conditionalInfo, null, ifGroupCounter);
 
-        return new NfWorkflow(name, calls);
+        List<String> mainFileRefs = new ArrayList<>();
+        collectMainFileRefs(wf.main, mainFileRefs);
+
+        return new NfWorkflow(name, calls, mainFileRefs);
     }
 
     /**
@@ -301,6 +304,65 @@ public class NextflowParser {
             collectOutRefs(be.getLeftExpression(), knownProcesses, channelVarMap, found);
             collectOutRefs(be.getRightExpression(), knownProcesses, channelVarMap, found);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Main-block file reference extraction
+    // -------------------------------------------------------------------------
+
+    private static final Set<String> CHANNEL_FILE_METHODS = Set.of(
+            "fromPath", "fromFilePairs", "fromSRA", "fromFastq");
+
+    /**
+     * Recursively walk a workflow {@code main:} block and collect string-literal
+     * file patterns found in {@code Channel.fromPath("pattern")},
+     * {@code Channel.fromFilePairs("pattern")}, and {@code file("pattern")} calls.
+     */
+    private void collectMainFileRefs(Statement stmt, List<String> result) {
+        if (stmt == null) return;
+        if (stmt instanceof BlockStatement bs) {
+            for (Statement child : bs.getStatements()) {
+                collectMainFileRefs(child, result);
+            }
+        } else if (stmt instanceof IfStatement is) {
+            collectMainFileRefs(is.getIfBlock(), result);
+            collectMainFileRefs(is.getElseBlock(), result);
+        } else if (stmt instanceof WhileStatement ws) {
+            collectMainFileRefs(ws.getLoopBlock(), result);
+        } else if (stmt instanceof ForStatement fs) {
+            collectMainFileRefs(fs.getLoopBlock(), result);
+        } else if (stmt instanceof ExpressionStatement es) {
+            collectMainFileRefsExpr(es.getExpression(), result);
+        }
+    }
+
+    private void collectMainFileRefsExpr(Expression expr, List<String> result) {
+        if (expr == null) return;
+        if (expr instanceof MethodCallExpression mce) {
+            String method = mce.getMethodAsString();
+            if (CHANNEL_FILE_METHODS.contains(method) || "file".equals(method)) {
+                // getFirstStringArg only returns ConstantExpression string values,
+                // so GString interpolations (e.g. file(params.x)) are already excluded.
+                getFirstStringArg(mce).filter(s -> !s.isBlank()).ifPresent(s -> addUniqueRef(s, result));
+            }
+            // Recurse into object expression and arguments to find nested channel calls
+            collectMainFileRefsExpr(mce.getObjectExpression(), result);
+            for (Expression arg : getArgs(mce)) {
+                collectMainFileRefsExpr(arg, result);
+            }
+        } else if (expr instanceof BinaryExpression be) {
+            collectMainFileRefsExpr(be.getLeftExpression(), result);
+            collectMainFileRefsExpr(be.getRightExpression(), result);
+        } else if (expr instanceof ClosureExpression ce) {
+            if (ce.getCode() instanceof BlockStatement cbs) {
+                collectMainFileRefs(cbs, result);
+            }
+        }
+    }
+
+    /** Add {@code ref} to {@code list} only if not already present, preserving insertion order. */
+    private static void addUniqueRef(String ref, List<String> list) {
+        if (!list.contains(ref)) list.add(ref);
     }
 
     // -------------------------------------------------------------------------

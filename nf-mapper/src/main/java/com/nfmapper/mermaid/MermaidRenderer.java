@@ -201,6 +201,37 @@ public class MermaidRenderer {
     }
 
     // -------------------------------------------------------------------------
+    // Main-block file reference helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Collect all unique file-reference patterns from the {@code main:} blocks of all
+     * workflows in the pipeline, preserving declaration order.
+     */
+    private List<String> collectAllMainFileRefs(ParsedPipeline pipeline) {
+        List<String> refs = new ArrayList<>();
+        for (NfWorkflow wf : pipeline.getWorkflows()) {
+            for (String ref : wf.getMainFileRefs()) {
+                if (!refs.contains(ref)) refs.add(ref);
+            }
+        }
+        return refs;
+    }
+
+    /**
+     * Emit a HIGHLIGHT commit for each file-reference pattern found in workflow
+     * {@code main:} blocks, placing them on the current ({@code main}) branch before
+     * any process commits.
+     */
+    private void emitMainFileRefCommits(List<String> lines, ParsedPipeline pipeline) {
+        for (String pattern : collectAllMainFileRefs(pipeline)) {
+            String ext = fileExtension(pattern);
+            String tagPart = ext != null ? " tag: \"" + ext + "\"" : "";
+            lines.add("   commit id: \"input: " + pattern + "\" type: HIGHLIGHT" + tagPart);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Flat rendering (no connections)
     // -------------------------------------------------------------------------
 
@@ -257,6 +288,9 @@ public class MermaidRenderer {
         }
 
         if (segments.isEmpty()) return;
+
+        // Emit file references from workflow main blocks before any process commits
+        emitMainFileRefCommits(lines, pipeline);
 
         // First segment always goes on main
         emitFlatSegment(lines, segments.get(0), "main", procLookup, conditionalInfo);
@@ -356,6 +390,9 @@ public class MermaidRenderer {
 
         Set<String> emitted = new LinkedHashSet<>();
         final String[] currentBranch = {"main"};
+
+        // Emit file references from workflow main blocks before the first process commit
+        emitMainFileRefCommits(lines, pipeline);
 
         for (String node : mainPath) {
             if (!emitted.contains(node)) {

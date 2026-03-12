@@ -232,4 +232,23 @@ class SnapshotTest {
         assertTrue(diagram.contains("cherry-pick id: \"ALIGN: *.bam\""));
         assertTrue(diagram.indexOf("merge ") < diagram.indexOf("commit id: \"COUNT: *.counts.txt\""));
     }
+
+    @Test
+    void testSnapshotMainFileRefs() throws IOException {
+        ParsedPipeline pipeline = PARSER.parseFile(fixture("main_file_refs.nf"));
+        String diagram = RENDERER.render(pipeline, "Main Block File Refs", null);
+        writeSnapshot("main_file_refs", diagram, "nf-mapper/src/test/resources/fixtures/main_file_refs.nf");
+        assertTrue(diagram.contains("gitGraph"));
+        // File references from the main block should appear as HIGHLIGHT commits
+        assertTrue(diagram.contains("commit id: \"input: samplesheet.csv\" type: HIGHLIGHT"),
+            "Expected samplesheet.csv highlight in diagram:\n" + diagram);
+        assertTrue(diagram.contains("commit id: \"input: data/*_{1,2}.fastq.gz\" type: HIGHLIGHT"),
+            "Expected fastq.gz pattern highlight in diagram:\n" + diagram);
+        // File ref commits should precede process commits
+        int refIdx = diagram.indexOf("input: samplesheet.csv");
+        int procIdx = diagram.indexOf("commit id: \"VALIDATE_INPUT\"");
+        if (procIdx < 0) procIdx = diagram.indexOf("commit id: \"FASTQC\"");
+        assertTrue(refIdx < procIdx,
+            "File ref commit should appear before process commit");
+    }
 }

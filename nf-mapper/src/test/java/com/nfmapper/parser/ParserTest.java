@@ -349,6 +349,89 @@ class ParserTest {
             "Entry workflow should call COUNT_WF, got: " + entry.getCalls());
     }
 
+    @Test void testMainBlockChannelFromPathExtracted() {
+        String content = """
+            workflow {
+                main:
+                reads_ch = Channel.fromPath("*.fastq.gz")
+                FASTQC(reads_ch)
+            }
+            process FASTQC {
+                script: 'echo hi'
+            }
+            """;
+        ParsedPipeline p = PARSER.parseContent(content);
+        List<NfWorkflow> wfs = p.getWorkflows();
+        assertFalse(wfs.isEmpty(), "Should have at least one workflow");
+        NfWorkflow entry = wfs.stream().filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry, "Should have an entry workflow");
+        assertTrue(entry.getMainFileRefs().contains("*.fastq.gz"),
+            "Expected *.fastq.gz in mainFileRefs, got: " + entry.getMainFileRefs());
+    }
+
+    @Test void testMainBlockChannelFromFilePairsExtracted() {
+        String content = """
+            workflow {
+                main:
+                reads_ch = Channel.fromFilePairs("data/*_{1,2}.fastq.gz")
+                FASTQC(reads_ch)
+            }
+            process FASTQC {
+                script: 'echo hi'
+            }
+            """;
+        ParsedPipeline p = PARSER.parseContent(content);
+        NfWorkflow entry = p.getWorkflows().stream().filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry);
+        assertTrue(entry.getMainFileRefs().contains("data/*_{1,2}.fastq.gz"),
+            "Expected pattern in mainFileRefs, got: " + entry.getMainFileRefs());
+    }
+
+    @Test void testMainBlockFileCallExtracted() {
+        String content = """
+            workflow {
+                main:
+                VALIDATE(file("samplesheet.csv"))
+            }
+            process VALIDATE {
+                script: 'echo hi'
+            }
+            """;
+        ParsedPipeline p = PARSER.parseContent(content);
+        NfWorkflow entry = p.getWorkflows().stream().filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry);
+        assertTrue(entry.getMainFileRefs().contains("samplesheet.csv"),
+            "Expected samplesheet.csv in mainFileRefs, got: " + entry.getMainFileRefs());
+    }
+
+    @Test void testMainBlockDynamicFileRefNotCaptured() {
+        // file(params.input) has no string literal – should not be captured
+        String content = """
+            workflow {
+                main:
+                VALIDATE(file(params.input))
+            }
+            process VALIDATE {
+                script: 'echo hi'
+            }
+            """;
+        ParsedPipeline p = PARSER.parseContent(content);
+        NfWorkflow entry = p.getWorkflows().stream().filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry);
+        assertTrue(entry.getMainFileRefs().isEmpty(),
+            "Dynamic file refs should not be captured, got: " + entry.getMainFileRefs());
+    }
+
+    @Test void testMainFileRefFixture() throws IOException {
+        ParsedPipeline p = PARSER.parseFile(fixture("main_file_refs.nf"));
+        NfWorkflow entry = p.getWorkflows().stream().filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry, "Should have an entry workflow");
+        assertTrue(entry.getMainFileRefs().contains("samplesheet.csv"),
+            "Expected samplesheet.csv in mainFileRefs, got: " + entry.getMainFileRefs());
+        assertTrue(entry.getMainFileRefs().contains("data/*_{1,2}.fastq.gz"),
+            "Expected data/*_{1,2}.fastq.gz in mainFileRefs, got: " + entry.getMainFileRefs());
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
