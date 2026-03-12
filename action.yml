@@ -31,7 +31,7 @@ inputs:
     required: false
     default: "nf-core"
   config:
-    description: "JSON object of Mermaid gitGraph config overrides, e.g. '{\"showBranches\": true}'. Merged with defaults: showBranches=false, parallelCommits=true."
+    description: "JSON object of Mermaid gitGraph config overrides, e.g. '{\"showBranches\": true}'. Merged with defaults: showBranches=true, parallelCommits=false."
     required: false
     default: ""
   update:
