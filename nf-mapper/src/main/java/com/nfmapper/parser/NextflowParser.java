@@ -21,8 +21,66 @@ import java.util.regex.Pattern;
 public class NextflowParser {
 
     public ParsedPipeline parseFile(String filePath) throws IOException {
-        String content = Files.readString(Path.of(filePath));
-        return parseContent(content);
+        return parseFileInternal(Path.of(filePath).toAbsolutePath().normalize(),
+                                  new LinkedHashSet<>());
+    }
+
+    /**
+     * Internal recursive implementation for following {@code include} paths.
+     * {@code visited} prevents cycles.
+     */
+    private ParsedPipeline parseFileInternal(Path filePath, Set<Path> visited) throws IOException {
+        if (!visited.add(filePath)) return empty();
+        String content = Files.readString(filePath);
+        Path baseDir = filePath.getParent();
+
+        // Parse the raw content of this file (includes same-file sub-workflow unfolding)
+        ParsedPipeline main = parseContent(content);
+
+        // Follow includes from this file and merge their content
+        List<NfProcess> allProcesses = new ArrayList<>(main.getProcesses());
+        List<NfWorkflow> allWorkflows = new ArrayList<>(main.getWorkflows());
+        List<NfInclude> allIncludes = new ArrayList<>(main.getIncludes());
+        List<String[]> allConnections = new ArrayList<>(main.getConnections());
+        Map<String, String[]> allConditionalInfo = new LinkedHashMap<>(main.getConditionalInfo());
+
+        Set<String> existingProcNames = new LinkedHashSet<>();
+        allProcesses.forEach(p -> existingProcNames.add(p.getName()));
+        Set<String> existingWfNames = new LinkedHashSet<>();
+        allWorkflows.stream().filter(w -> w.getName() != null)
+                             .forEach(w -> existingWfNames.add(w.getName()));
+
+        for (NfInclude inc : main.getIncludes()) {
+            Path incPath = resolveIncludePath(baseDir, inc.getPath());
+            if (incPath == null) continue;
+            try {
+                ParsedPipeline sub = parseFileInternal(incPath, visited);
+                // Merge processes (deduplicate by name)
+                sub.getProcesses().stream()
+                   .filter(p -> existingProcNames.add(p.getName()))
+                   .forEach(allProcesses::add);
+                // Merge named workflows only (skip entry/unnamed workflows from included files)
+                sub.getWorkflows().stream()
+                   .filter(w -> w.getName() != null && existingWfNames.add(w.getName()))
+                   .forEach(allWorkflows::add);
+                // Merge connections and conditional info
+                allConnections.addAll(sub.getConnections());
+                sub.getConditionalInfo().forEach(allConditionalInfo::putIfAbsent);
+            } catch (IOException ignored) {
+                // Include file not found or unreadable – skip gracefully
+            }
+        }
+
+        // Re-run sub-workflow unfolding with the full merged set of named workflows
+        // (handles cross-file sub-workflow calls that couldn't be resolved per-file)
+        Map<String, NfWorkflow> namedWfMap = new LinkedHashMap<>();
+        allWorkflows.stream().filter(w -> w.getName() != null)
+                             .forEach(w -> namedWfMap.put(w.getName(), w));
+        List<String[]> resolvedConns = unfoldSubWorkflowConnections(
+                deduplicateConnections(allConnections), namedWfMap);
+
+        return new ParsedPipeline(allProcesses, allWorkflows, allIncludes,
+                                   resolvedConns, allConditionalInfo);
     }
 
     public ParsedPipeline parseContent(String content) {
@@ -92,8 +150,130 @@ public class NextflowParser {
             }
         }
 
+        // --- Unfold same-file named sub-workflow calls ---
+        // Replace any connection endpoint that is a named sub-workflow with that
+        // sub-workflow's constituent processes, producing a fully-resolved DAG.
+        Map<String, NfWorkflow> namedWfMap = new LinkedHashMap<>();
+        workflows.stream().filter(w -> w.getName() != null)
+                          .forEach(w -> namedWfMap.put(w.getName(), w));
+        List<String[]> resolvedConns = unfoldSubWorkflowConnections(
+                deduplicateConnections(connections), namedWfMap);
+
         return new ParsedPipeline(processes, workflows, includes,
-                                  deduplicateConnections(connections), conditionalInfo);
+                                   resolvedConns, conditionalInfo);
+    }
+
+    // -------------------------------------------------------------------------
+    // Sub-workflow unfolding
+    // -------------------------------------------------------------------------
+
+    /**
+     * Iteratively replace any connection endpoint that is a named sub-workflow with
+     * that sub-workflow's constituent entry/exit processes, until no named workflow
+     * nodes remain in the connection graph.
+     */
+    private List<String[]> unfoldSubWorkflowConnections(List<String[]> connections,
+                                                         Map<String, NfWorkflow> namedWorkflows) {
+        if (namedWorkflows.isEmpty()) return connections;
+        boolean changed = true;
+        List<String[]> result = new ArrayList<>(connections);
+        while (changed) {
+            changed = false;
+            List<String[]> next = new ArrayList<>();
+            for (String[] conn : result) {
+                NfWorkflow srcWf = namedWorkflows.get(conn[0]);
+                NfWorkflow dstWf = namedWorkflows.get(conn[1]);
+                if (dstWf != null) {
+                    if (!dstWf.getCalls().isEmpty()) {
+                        // X -> SubWorkflow: expand to X -> [entry processes of SubWorkflow]
+                        for (String entry : workflowEntryProcesses(dstWf, result)) {
+                            next.add(new String[]{conn[0], entry});
+                        }
+                    }
+                    // If dstWf has no calls (empty body), drop the connection entirely –
+                    // an empty workflow contributes no visible nodes.
+                    changed = true;
+                } else if (srcWf != null) {
+                    if (!srcWf.getCalls().isEmpty()) {
+                        // SubWorkflow -> Y: expand to [exit processes of SubWorkflow] -> Y
+                        for (String exit : workflowExitProcesses(srcWf, result)) {
+                            next.add(new String[]{exit, conn[1]});
+                        }
+                    }
+                    // If srcWf has no calls, drop the connection similarly.
+                    changed = true;
+                } else {
+                    next.add(conn);
+                }
+            }
+            result = next;
+        }
+        return deduplicateConnections(result);
+    }
+
+    /**
+     * Returns the calls within {@code wf} that have no predecessor inside the
+     * same workflow (i.e., the "entry" nodes of the sub-workflow).
+     * Falls back to all calls if none can be identified.
+     */
+    private List<String> workflowEntryProcesses(NfWorkflow wf, List<String[]> allConns) {
+        Set<String> callSet = new LinkedHashSet<>(wf.getCalls());
+        Set<String> hasPred = new LinkedHashSet<>();
+        for (String[] c : allConns) {
+            if (callSet.contains(c[0]) && callSet.contains(c[1])) hasPred.add(c[1]);
+        }
+        List<String> entries = new ArrayList<>();
+        for (String call : wf.getCalls()) {
+            if (!hasPred.contains(call)) entries.add(call);
+        }
+        return entries.isEmpty() ? new ArrayList<>(wf.getCalls()) : entries;
+    }
+
+    /**
+     * Returns the calls within {@code wf} that have no successor inside the
+     * same workflow (i.e., the "exit" nodes of the sub-workflow).
+     * Falls back to all calls if none can be identified.
+     */
+    private List<String> workflowExitProcesses(NfWorkflow wf, List<String[]> allConns) {
+        Set<String> callSet = new LinkedHashSet<>(wf.getCalls());
+        Set<String> hasSucc = new LinkedHashSet<>();
+        for (String[] c : allConns) {
+            if (callSet.contains(c[0]) && callSet.contains(c[1])) hasSucc.add(c[0]);
+        }
+        List<String> exits = new ArrayList<>();
+        for (String call : wf.getCalls()) {
+            if (!hasSucc.contains(call)) exits.add(call);
+        }
+        return exits.isEmpty() ? new ArrayList<>(wf.getCalls()) : exits;
+    }
+
+    // -------------------------------------------------------------------------
+    // Include path resolution
+    // -------------------------------------------------------------------------
+
+    /**
+     * Resolve an include path relative to {@code baseDir}.
+     * Tries the path as-is, then with {@code .nf} appended, then with
+     * {@code /main.nf} appended.  Returns {@code null} if the file cannot be
+     * found or the path contains dynamic expressions.
+     *
+     * <p><b>Note:</b> paths containing {@code $} or {@code {}} are treated as
+     * dynamic (e.g. {@code "${params.modules_dir}/fastqc"}) and are skipped.
+     * This heuristic may incorrectly skip valid paths whose file name happens to
+     * contain a literal dollar sign, but such names are extremely rare in
+     * Nextflow pipelines.
+     */
+    private Path resolveIncludePath(Path baseDir, String includePath) {
+        if (includePath == null || includePath.contains("$") || includePath.contains("{")) {
+            return null; // skip dynamic paths
+        }
+        Path base = baseDir.resolve(includePath).normalize();
+        if (Files.isRegularFile(base)) return base;
+        Path withNf = Path.of(base.toString() + ".nf");
+        if (Files.isRegularFile(withNf)) return withNf;
+        Path mainNf = base.resolve("main.nf");
+        if (Files.isRegularFile(mainNf)) return mainNf;
+        return null;
     }
 
     // -------------------------------------------------------------------------

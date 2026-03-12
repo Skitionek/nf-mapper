@@ -251,4 +251,25 @@ class SnapshotTest {
         assertTrue(refIdx < procIdx,
             "File ref commit should appear before process commit");
     }
+
+    @Test
+    void testSnapshotQuantmsStyle() throws IOException {
+        // Multi-file pipeline: main.nf includes workflows/quantms.nf
+        // Sub-workflows BIGBIO_QUANTMS and QUANTMS should be unfolded to show the
+        // full process chain: INPUT_CHECK -> ... -> SUMMARY_PIPELINE -> PIPELINE_COMPLETION
+        ParsedPipeline pipeline = PARSER.parseFile(fixture("quantms_style/main.nf"));
+        String diagram = RENDERER.render(pipeline, "quantms-style pipeline", null);
+        writeSnapshot("quantms_style", diagram,
+                "nf-mapper/src/test/resources/fixtures/quantms_style/main.nf");
+        assertTrue(diagram.contains("gitGraph"), "should contain gitGraph");
+        // After unfolding, processes from the included quantms.nf should appear
+        // (they may appear as import names since they have no process {} block)
+        assertTrue(diagram.contains("PIPELINE_COMPLETION") || diagram.contains("SUMMARY_PIPELINE"),
+            "Expected quantms.nf processes in diagram:\n" + diagram);
+        // Named sub-workflows should NOT appear as process commits
+        assertFalse(diagram.contains("commit id: \"QUANTMS\""),
+            "QUANTMS should be unfolded, not appear as a commit:\n" + diagram);
+        assertFalse(diagram.contains("commit id: \"BIGBIO_QUANTMS\""),
+            "BIGBIO_QUANTMS should be unfolded, not appear as a commit:\n" + diagram);
+    }
 }

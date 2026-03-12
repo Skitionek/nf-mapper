@@ -433,6 +433,94 @@ class ParserTest {
     }
 
     // -------------------------------------------------------------------------
+    // Sub-workflow unfolding tests
+    // -------------------------------------------------------------------------
+
+    @Test void testSameFileSubWorkflowUnfolded() {
+        // ALIGN -> COUNT_WF should become ALIGN -> COUNT after unfolding
+        String content =
+            "process ALIGN {\n    script:\n    'echo align'\n}\n" +
+            "process COUNT {\n    script:\n    'echo count'\n}\n" +
+            "workflow COUNT_WF {\n" +
+            "    take: bam\n" +
+            "    main:\n" +
+            "        COUNT(bam)\n" +
+            "}\n" +
+            "workflow {\n" +
+            "    ALIGN(params.input)\n" +
+            "    COUNT_WF(ALIGN.out.bam)\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        // After unfolding, ALIGN -> COUNT should exist
+        assertTrue(containsConnection(p.getConnections(), "ALIGN", "COUNT"),
+            "Expected ALIGN->COUNT connection after unfolding, got: " + connectionList(p.getConnections()));
+        // COUNT_WF should NOT appear in connections
+        assertFalse(p.getConnections().stream().anyMatch(c -> "COUNT_WF".equals(c[0]) || "COUNT_WF".equals(c[1])),
+            "COUNT_WF should not appear in connections after unfolding, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testSameFileSubWorkflowWithLinearChainUnfolded() {
+        // Entry calls SUBWF which has A->B->C internally
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "process D {\n    script:\n    'echo d'\n}\n" +
+            "workflow SUBWF {\n" +
+            "    take: input\n" +
+            "    main:\n" +
+            "        A(input)\n" +
+            "        B(A.out)\n" +
+            "        C(B.out)\n" +
+            "}\n" +
+            "workflow {\n" +
+            "    SUBWF(params.input)\n" +
+            "    D(SUBWF.out)\n" +  // D consumes SUBWF's output
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        // Internal connections of SUBWF preserved
+        assertTrue(containsConnection(p.getConnections(), "A", "B"),
+            "Expected A->B, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C, got: " + connectionList(p.getConnections()));
+        // SUBWF -> D becomes C -> D (exit of SUBWF is C, the last node)
+        assertTrue(containsConnection(p.getConnections(), "C", "D"),
+            "Expected C->D after unfolding SUBWF exit, got: " + connectionList(p.getConnections()));
+        // No SUBWF in connections
+        assertFalse(p.getConnections().stream().anyMatch(c -> "SUBWF".equals(c[0]) || "SUBWF".equals(c[1])),
+            "SUBWF should not appear in connections after unfolding, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testIfWorkflowCountWfUnfolded() throws IOException {
+        ParsedPipeline p = PARSER.parseFile(fixture("if_workflow.nf"));
+        // After unfolding COUNT_WF, ALIGN -> COUNT connection should exist
+        assertTrue(containsConnection(p.getConnections(), "ALIGN", "COUNT"),
+            "Expected ALIGN->COUNT after COUNT_WF unfolding, got: " + connectionList(p.getConnections()));
+        // COUNT_WF should NOT appear as a connection endpoint
+        assertFalse(p.getConnections().stream().anyMatch(c -> "COUNT_WF".equals(c[0]) || "COUNT_WF".equals(c[1])),
+            "COUNT_WF should not appear in connections after unfolding, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testMultiFileSubWorkflowUnfolded() throws IOException {
+        // quantms_style/main.nf includes quantms.nf; those processes should be merged
+        // and BIGBIO_QUANTMS/QUANTMS sub-workflows unfolded to show the full chain.
+        ParsedPipeline p = PARSER.parseFile(fixture("quantms_style/main.nf"));
+        // Processes from quantms.nf must be present as include imports
+        // (they are not process-defined, just referenced via include)
+        List<String> connNodes = p.getConnections().stream()
+            .flatMap(c -> java.util.stream.Stream.of(c[0], c[1]))
+            .distinct().toList();
+        // The full linear chain should be unfolded: INPUT_CHECK -> ... -> SUMMARY_PIPELINE -> PIPELINE_COMPLETION
+        assertTrue(connNodes.contains("INPUT_CHECK") || connNodes.contains("SUMMARY_PIPELINE"),
+            "Expected quantms.nf processes in connection graph, got nodes: " + connNodes);
+        // Named sub-workflows should not appear as connection endpoints
+        assertFalse(connNodes.contains("QUANTMS"),
+            "QUANTMS should be unfolded, not appear in connections");
+        assertFalse(connNodes.contains("BIGBIO_QUANTMS"),
+            "BIGBIO_QUANTMS should be unfolded, not appear in connections");
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
