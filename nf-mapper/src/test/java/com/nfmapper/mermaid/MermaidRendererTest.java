@@ -45,7 +45,7 @@ class MermaidRendererTest {
                 String[] lines = result.split("\n");
                 // Init line: starts with %%{init: ...
                 assertTrue(lines[0].startsWith("%%{init: "), "Expected init line, got: " + lines[0]);
-                // nf-metromap theme
+                // nf-core theme
                 assertTrue(lines[0].contains("'theme': 'base'"), "Expected theme:base in init");
                 assertTrue(lines[0].contains("'git0': '#24B064'"), "Expected nf-core green in themeVariables");
                 // gitGraph section
@@ -339,7 +339,7 @@ class MermaidRendererTest {
         }
 
         @Test
-        void testNfMetromapThemePresent() {
+        void testNfCoreThemePresent() {
                 String result = RENDERER.render(pipeline());
                 assertTrue(result.contains("'theme': 'base'"), "Should have base theme");
                 assertTrue(result.contains("'git0': '#24B064'"), "Should have nf-core green as git0");

@@ -23,7 +23,7 @@ inputs:
     required: false
     default: "md"
   renderer:
-    description: "Renderer strategy: 'default', 'conditional', or 'metro' (default: default)"
+    description: "Renderer strategy: 'default' or 'conditional' (default: default)"
     required: false
     default: "default"
   theme:
