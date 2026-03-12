@@ -248,6 +248,108 @@ class ParserTest {
     }
 
     // -------------------------------------------------------------------------
+    // if-statement and named-workflow tests
+    // -------------------------------------------------------------------------
+
+    @Test void testIfStatementProcessTaggedConditional() {
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    if (params.run_b) {\n" +
+            "        B(A.out)\n" +
+            "    }\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertFalse(p.getConditionalInfo().isEmpty(),
+            "Expected conditional info for process inside if block");
+        assertTrue(p.getConditionalInfo().containsKey("B"),
+            "B should be tagged as conditional");
+        String[] condInfo = p.getConditionalInfo().get("B");
+        assertNotNull(condInfo);
+        assertEquals(2, condInfo.length);
+        assertTrue(condInfo[1].contains("run_b"),
+            "Condition text should contain 'run_b', got: " + condInfo[1]);
+    }
+
+    @Test void testUnconditionalProcessNotTagged() {
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "workflow {\n    A(params.input)\n}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertFalse(p.getConditionalInfo().containsKey("A"),
+            "Unconditional process A should not be in conditionalInfo");
+    }
+
+    @Test void testMultipleProcessesInIfBlockShareGroup() {
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    if (params.flag) {\n" +
+            "        A(params.input)\n" +
+            "        B(A.out)\n" +
+            "    }\n" +
+            "    C(params.input)\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(p.getConditionalInfo().containsKey("A"), "A should be conditional");
+        assertTrue(p.getConditionalInfo().containsKey("B"), "B should be conditional");
+        assertFalse(p.getConditionalInfo().containsKey("C"), "C should not be conditional");
+        // A and B should share the same group id
+        assertEquals(p.getConditionalInfo().get("A")[0], p.getConditionalInfo().get("B")[0],
+            "A and B should share the same if-group id");
+    }
+
+    @Test void testNamedWorkflowCallVisibleViaPrePass() {
+        // The entry workflow calls SUBWF which is defined AFTER it in source order.
+        // The pre-pass ensures SUBWF is in knownProcesses before the entry workflow is parsed.
+        String content =
+            "workflow {\n" +
+            "    main:\n" +
+            "        SUBWF(params.input)\n" +
+            "}\n" +
+            "workflow SUBWF {\n" +
+            "    take: input\n" +
+            "    main:\n" +
+            "        A(input)\n" +
+            "}\n" +
+            "process A {\n    script:\n    'echo a'\n}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        List<NfWorkflow> wfs = p.getWorkflows();
+        // Entry workflow should have SUBWF in its calls
+        NfWorkflow entry = wfs.stream().filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry, "Should have an entry workflow");
+        assertTrue(entry.getCalls().contains("SUBWF"),
+            "Entry workflow should call SUBWF, got calls: " + entry.getCalls());
+    }
+
+    @Test void testIfWorkflowFixture() throws IOException {
+        ParsedPipeline p = PARSER.parseFile(fixture("if_workflow.nf"));
+        // Processes
+        List<String> procNames = p.getProcesses().stream().map(NfProcess::getName).toList();
+        assertTrue(procNames.contains("TRIM"));
+        assertTrue(procNames.contains("ALIGN"));
+        assertTrue(procNames.contains("QC"));
+        assertTrue(procNames.contains("COUNT"));
+        // Named sub-workflow visible
+        List<String> wfNames = p.getWorkflows().stream()
+            .map(NfWorkflow::getName).filter(Objects::nonNull).toList();
+        assertTrue(wfNames.contains("COUNT_WF"), "COUNT_WF should be a named workflow");
+        // QC is conditional
+        assertTrue(p.getConditionalInfo().containsKey("QC"),
+            "QC should be conditional (inside if block)");
+        // COUNT_WF should appear in the entry workflow's calls
+        NfWorkflow entry = p.getWorkflows().stream()
+            .filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry);
+        assertTrue(entry.getCalls().contains("COUNT_WF"),
+            "Entry workflow should call COUNT_WF, got: " + entry.getCalls());
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

@@ -4,19 +4,19 @@
 ---
 title: Workflow Call Branches
 ---
-%%{init: {'gitGraph': {'showBranches': false, 'parallelCommits': true}} }%%
+%%{init: {'theme': 'base', 'themeVariables': {'git0': '#24B064', 'gitInv0': '#ffffff', 'git1': '#FA7F19', 'gitInv1': '#ffffff', 'git2': '#0570b0', 'gitInv2': '#ffffff', 'git3': '#e63946', 'gitInv3': '#ffffff', 'git4': '#9b59b6', 'gitInv4': '#ffffff', 'git5': '#f5c542', 'gitInv5': '#000000', 'git6': '#1abc9c', 'gitInv6': '#ffffff', 'git7': '#7b2d3b', 'gitInv7': '#ffffff'}, 'gitGraph': {'showBranches': true, 'parallelCommits': true}} }%%
 gitGraph LR:
    checkout main
    commit id: "FASTQC"
    commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "html"
    commit id: "FASTQC: *.zip" type: HIGHLIGHT tag: "zip"
-   branch branch_1
-   checkout branch_1
+   branch TRIMGALORE
+   checkout TRIMGALORE
    commit id: "TRIMGALORE"
    commit id: "TRIMGALORE: *.trimmed.fastq.gz" type: HIGHLIGHT tag: "gz"
    checkout main
-   branch branch_2
-   checkout branch_2
+   branch MULTIQC
+   checkout MULTIQC
    commit id: "MULTIQC"
    commit id: "MULTIQC: multiqc_report.html" type: HIGHLIGHT tag: "html"
    checkout main
