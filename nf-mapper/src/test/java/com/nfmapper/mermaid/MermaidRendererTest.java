@@ -282,4 +282,28 @@ class MermaidRendererTest {
         assertTrue(result.contains("commit id: \"A\"") || result.contains("commit id: \"B\""),
             "At least one process should appear in output:\n" + result);
     }
+
+    /**
+     * An off-chain cycle (A → B → A, both not on the main path) must not cause an
+     * infinite loop in emitOffChainWithChannels.
+     *
+     * <p>Graph: X → Z (main chain), X → A, A → B, B → A (off-chain cycle).
+     */
+    @Test void testOffChainCycleDoesNotHang() {
+        ParsedPipeline p = pipeline(
+            List.of(new NfProcess("X"), new NfProcess("Z"),
+                    new NfProcess("A"), new NfProcess("B")),
+            List.<String[]>of(
+                new String[]{"X", "Z"}, new String[]{"X", "A"},
+                new String[]{"A", "B"}, new String[]{"B", "A"}
+            )
+        );
+        String result = assertTimeoutPreemptively(
+            java.time.Duration.ofSeconds(5),
+            () -> RENDERER.render(p),
+            "render() hung on an off-chain cycle"
+        );
+        assertTrue(result.contains("commit id: \"X\""),
+            "Process X should appear in output:\n" + result);
+    }
 }

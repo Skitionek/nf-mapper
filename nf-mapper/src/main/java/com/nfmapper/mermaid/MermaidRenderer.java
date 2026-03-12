@@ -465,8 +465,9 @@ public class MermaidRenderer {
                                            Map<String, String> channelBranch,
                                            String currentBranch,
                                            Map<String, String[]> conditionalInfo) {
+        Set<String> visited = new LinkedHashSet<>();
         String cur = start;
-        while (cur != null) {
+        while (cur != null && visited.add(cur)) {
             emitNodeWithChannels(lines, cur, procLookup, predecessors, channelBranch,
                                   currentBranch, conditionalInfo);
             List<String> offSuccs = successors.getOrDefault(cur, Collections.emptyList()).stream()
