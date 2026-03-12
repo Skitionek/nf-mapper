@@ -230,23 +230,21 @@ gitGraph LR:
    commit id: "softwareVersionsToYAML"
    checkout main
    commit id: "SRA_RUNINFO_TO_FTP"
+   commit id: "if: params.skip_fastq_download" type: REVERSE
    branch ASPERA_CLI
    checkout ASPERA_CLI
-   commit id: "params.skip_fastq_download" type: REVERSE
    commit id: "ASPERA_CLI"
    checkout main
    branch FASTQ_DOWNLOAD_PREFETCH_FASTERQDUMP_SRATOOLS
    checkout FASTQ_DOWNLOAD_PREFETCH_FASTERQDUMP_SRATOOLS
-   commit id: "params.skip_fastq_download" type: REVERSE
    commit id: "FASTQ_DOWNLOAD_PREFETCH_FASTERQDUMP_SRATOOLS"
    checkout main
    branch SRA_FASTQ_FTP
    checkout SRA_FASTQ_FTP
-   commit id: "params.skip_fastq_download" type: REVERSE
    commit id: "SRA_FASTQ_FTP"
    checkout main
    commit id: "SRA_TO_SAMPLESHEET"
-   commit id: "params.sample_mapping_fields" type: REVERSE
+   commit id: "if: params.sample_mapping_fields" type: REVERSE
    commit id: "MULTIQC_MAPPINGS_CONFIG"
 ```
 <!-- /nf-mapper:example-fetchngs -->
