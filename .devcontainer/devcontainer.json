@@ -1,0 +1,60 @@
+{
+  "name": "nf-mapper Development",
+  "image": "mcr.microsoft.com/devcontainers/java:17",
+
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "17",
+      "installMaven": "true",
+      "mavenVersion": "3.9"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-maven",
+        "vscjava.vscode-java-test",
+        "vscjava.vscode-java-debug",
+        "redhat.java",
+        "visualstudioexptteam.vscodeintellicode",
+        "github.copilot",
+        "github.copilot-chat",
+        "bierner.markdown-mermaid",
+        "bpruitt-goddard.mermaid-markdown-syntax-highlighting"
+      ],
+      "settings": {
+        "java.configuration.updateBuildConfiguration": "automatic",
+        "java.compile.nullAnalysis.mode": "automatic",
+        "java.debug.settings.hotCodeReplace": "auto",
+        "maven.executable.path": "mvn",
+        "maven.terminal.useJavaHome": true,
+        "files.exclude": {
+          "**/target": true
+        },
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": "explicit"
+        }
+      }
+    }
+  },
+
+  "forwardPorts": [],
+
+  "postCreateCommand": "cd nf-mapper && mvn clean verify && cat ../CODESPACES.md",
+
+  "remoteUser": "vscode",
+
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind"
+  ],
+
+  "containerEnv": {
+    "JAVA_HOME": "/usr/local/sdkman/candidates/java/current"
+  }
+}

@@ -29,12 +29,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     than installing a Python package.
   - **CI**: Maven `verify` on Java 17 replaces the Python 3.10/3.11/3.12
     test matrix and ruff linting.
+  - **Renderer/theme validation matrix**: test coverage now explicitly runs
+    across renderer variants (`default`, `conditional`, `metro`) and themes
+    (`nf-core`, `plain`), including snapshot suites.
+  - **README examples**: renderer × theme examples are now documented as
+    rendered diagram blocks rather than command-only listings.
   - **`.gitignore`**: stripped Python-specific entries; replaced with
     Java/Maven artifact patterns.
 
 ---
 
 ### Fixed
+
+- **Parser workflow channel prepass now actively used** –
+  `buildChannelVarMap(...)` is now invoked during workflow extraction,
+  removing dead-code/"never used locally" diagnostics and ensuring channel
+  variable aliases are collected before call traversal.
+
+- **DAG merge channel registration regression** – merge-target channel commits
+  are no longer registered as branch-local when the merge target commit itself
+  is not emitted on that branch, preventing invalid `cherry-pick id: "..."`
+  references.
+
+- **CLI config map casting robustness** – JSON config parsing now normalizes
+  decoded objects via string-keyed map conversion before use, avoiding unsafe
+  cast warnings and improving marker-regeneration config handling.
 
 - **Multi-argument and zero-argument parenthesised calls now detected** –
   the Groovy parser represents `PROCESS(a, b)` and `PROCESS()` as

@@ -1,57 +1,63 @@
 package com.nfmapper.cli;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import com.nfmapper.mermaid.MermaidRenderer;
+import com.nfmapper.mermaid.MermaidTheme;
 import com.nfmapper.model.ParsedPipeline;
 import com.nfmapper.parser.NextflowParser;
+
 import groovy.json.JsonSlurper;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.regex.*;
-
-@Command(
-    name = "nf-mapper",
-    description = "Convert a Nextflow pipeline (.nf) into a Mermaid gitGraph diagram.",
-    mixinStandardHelpOptions = true
-)
+@Command(name = "nf-mapper", description = "Convert a Nextflow pipeline (.nf) into a Mermaid diagram.", mixinStandardHelpOptions = true)
 public class NfMapperCli implements Callable<Integer> {
 
-    @Parameters(index = "0", arity = "0..1", paramLabel = "PIPELINE.NF",
-                description = "Path to the Nextflow pipeline file. Not required with --regenerate.")
+    @Parameters(index = "0", arity = "0..1", paramLabel = "PIPELINE.NF", description = "Path to the Nextflow pipeline file. Not required with --regenerate.")
     private Path input;
 
-    @Option(names = {"-o", "--output"}, paramLabel = "FILE",
-            description = "Write the diagram to FILE instead of stdout.")
+    @Option(names = { "-o",
+            "--output" }, paramLabel = "FILE", description = "Write the diagram to FILE instead of stdout.")
     private Path output;
 
-    @Option(names = "--update", paramLabel = "FILE",
-            description = "Update diagram inside marker blocks in FILE.")
+    @Option(names = "--update", paramLabel = "FILE", description = "Update diagram inside marker blocks in FILE.")
     private Path update;
 
-    @Option(names = "--regenerate", paramLabel = "FILE",
-            description = "Scan FILE for nf-mapper blocks with pipeline= attribute and regenerate.")
+    @Option(names = "--regenerate", paramLabel = "FILE", description = "Scan FILE for nf-mapper blocks with pipeline= attribute and regenerate.")
     private Path regenerate;
 
-    @Option(names = "--marker", defaultValue = "nf-mapper", paramLabel = "NAME",
-            description = "Marker name for --update (default: nf-mapper).")
+    @Option(names = "--marker", defaultValue = "nf-mapper", paramLabel = "NAME", description = "Marker name for --update (default: nf-mapper).")
     private String marker;
 
     @Option(names = "--title", paramLabel = "TEXT", description = "Optional diagram title.")
     private String title;
 
-    @Option(names = "--format", defaultValue = "plain", paramLabel = "FORMAT",
-            description = "Output format: plain or md (default: plain).")
+    @Option(names = "--format", defaultValue = "plain", paramLabel = "FORMAT", description = "Output format: plain or md (default: plain).")
     private String format;
 
-    @Option(names = "--config", paramLabel = "JSON",
-            description = "JSON config overrides for Mermaid gitGraph.")
+    @Option(names = "--config", paramLabel = "JSON", description = "JSON config overrides for Mermaid rendering.")
     private String configJson;
+
+    @Option(names = "--renderer", defaultValue = "default", paramLabel = "NAME", description = "Renderer strategy: default, conditional, or metro (default: default).")
+    private String rendererMode;
+
+    @Option(names = "--theme", defaultValue = "nf-core", paramLabel = "NAME", description = "Theme class: nf-core or plain (default: nf-core).")
+    private String themeMode;
 
     private PrintStream out = System.out;
     private PrintStream err = System.err;
@@ -83,7 +89,8 @@ public class NfMapperCli implements Callable<Integer> {
         }
 
         Map<String, Object> configMap = parseConfigJson(configJson);
-        if (configMap == null && configJson != null) return 1; // parse error already printed
+        if (configMap == null && configJson != null)
+            return 1; // parse error already printed
 
         NextflowParser parser = new NextflowParser();
         ParsedPipeline pipeline;
@@ -94,8 +101,7 @@ public class NfMapperCli implements Callable<Integer> {
             return 1;
         }
 
-        MermaidRenderer renderer = new MermaidRenderer();
-        String diagram = renderer.render(pipeline, title, configMap);
+        String diagram = renderPipeline(pipeline, title, configMap, rendererMode, themeMode);
 
         String outputContent = "md".equals(format) ? "```mermaid\n" + diagram + "\n```" : diagram;
 
@@ -119,19 +125,34 @@ public class NfMapperCli implements Callable<Integer> {
     // Config JSON parsing
     // -------------------------------------------------------------------------
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> parseConfigJson(String json) {
-        if (json == null) return null;
+        if (json == null)
+            return null;
         try {
             JsonSlurper slurper = new JsonSlurper();
             Object parsed = slurper.parseText(json);
-            if (parsed instanceof Map<?, ?> m) return (Map<String, Object>) m;
+            return toStringKeyedMap(parsed);
+        } catch (IllegalArgumentException e) {
             err.println("nf-mapper: error: --config must be a JSON object");
             return null;
         } catch (Exception e) {
             err.println("nf-mapper: error: --config is not valid JSON: " + e.getMessage());
             return null;
         }
+    }
+
+    private Map<String, Object> toStringKeyedMap(Object parsed) {
+        if (!(parsed instanceof Map<?, ?> rawMap)) {
+            throw new IllegalArgumentException("JSON value is not an object");
+        }
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                throw new IllegalArgumentException("JSON object contains a non-string key");
+            }
+            normalized.put(key, entry.getValue());
+        }
+        return normalized;
     }
 
     // -------------------------------------------------------------------------
@@ -175,7 +196,7 @@ public class NfMapperCli implements Callable<Integer> {
 
         List<String> segments = new ArrayList<>();
         int lastEnd = 0;
-        int[] errors = {0};
+        int[] errors = { 0 };
 
         Matcher m = BLOCK_RE.matcher(maskedText);
         while (m.find()) {
@@ -199,23 +220,18 @@ public class NfMapperCli implements Callable<Integer> {
             String blockTitle = attrs.getOrDefault("title", null);
             String fmt = attrs.getOrDefault("format", "md");
             String configStr = attrs.get("config");
+            String renderer = attrs.getOrDefault("renderer", rendererMode);
+            String theme = attrs.getOrDefault("theme", themeMode);
 
             Map<String, Object> configMap = null;
             if (configStr != null) {
                 try {
                     JsonSlurper slurper = new JsonSlurper();
                     Object parsed = slurper.parseText(configStr);
-                    if (parsed instanceof Map<?, ?>) {
-                        configMap = (Map<String, Object>) parsed;
-                    } else {
-                        err.println("nf-mapper: error: config attribute in marker must be a JSON object");
-                        errors[0]++;
-                        segments.add(raw.substring(m.start(), m.end()));
-                        lastEnd = m.end();
-                        continue;
-                    }
-                } catch (ClassCastException e) {
-                    err.println("nf-mapper: error: config attribute contains invalid JSON structure: " + e.getMessage());
+                    configMap = toStringKeyedMap(parsed);
+                } catch (IllegalArgumentException e) {
+                    err.println(
+                            "nf-mapper: error: config attribute in marker must be a JSON object");
                     errors[0]++;
                     segments.add(raw.substring(m.start(), m.end()));
                     lastEnd = m.end();
@@ -232,8 +248,7 @@ public class NfMapperCli implements Callable<Integer> {
             try {
                 NextflowParser parser = new NextflowParser();
                 ParsedPipeline pipeline = parser.parseFile(pipelinePath);
-                MermaidRenderer renderer = new MermaidRenderer();
-                String diagram = renderer.render(pipeline, blockTitle, configMap);
+                String diagram = renderPipeline(pipeline, blockTitle, configMap, renderer, theme);
                 String body = "md".equals(fmt) ? "```mermaid\n" + diagram + "\n```" : diagram;
                 segments.add(opening + "\n" + body + "\n" + closing);
             } catch (Exception e) {
@@ -258,7 +273,8 @@ public class NfMapperCli implements Callable<Integer> {
         Pattern attrsPat = Pattern.compile("<!--\\s*nf-mapper(?:[:\\w-]+)?\\s*(.*?)\\s*-->",
                 Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
         Matcher am = attrsPat.matcher(opening);
-        if (!am.find()) return result;
+        if (!am.find())
+            return result;
         String attrsStr = am.group(1);
         Pattern kvPat = Pattern.compile("([\\w-]+)=(?:\"([^\"]*)\"|'([^']*)')");
         Matcher kvm = kvPat.matcher(attrsStr);
@@ -268,5 +284,19 @@ public class NfMapperCli implements Callable<Integer> {
             result.put(key, value);
         }
         return result;
+    }
+
+    private String renderPipeline(ParsedPipeline pipeline,
+            String diagramTitle,
+            Map<String, Object> configMap,
+            String rendererName,
+            String themeName) {
+        try {
+            MermaidTheme theme = new MermaidThemeFactory().create(themeName);
+            MermaidRenderer renderer = new MermaidRendererFactory().create(rendererName, theme);
+            return renderer.render(pipeline, diagramTitle, configMap);
+        } catch (IllegalArgumentException ex) {
+            throw new CommandLine.ParameterException(new CommandLine(this), ex.getMessage());
+        }
     }
 }

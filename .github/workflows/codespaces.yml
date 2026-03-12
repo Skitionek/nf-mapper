@@ -1,0 +1,43 @@
+name: Codespaces Prebuild
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+    workflow_dispatch:
+
+jobs:
+    prebuild:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Java 17
+              uses: actions/setup-java@v4
+              with:
+                  distribution: "temurin"
+                  java-version: "17"
+                  cache: "maven"
+
+            - name: Cache Maven dependencies
+              uses: actions/cache@v4
+              with:
+                  path: ~/.m2/repository
+                  key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+                  restore-keys: |
+                      ${{ runner.os }}-maven-
+
+            - name: Build and test
+              run: |
+                  cd nf-mapper
+                  mvn clean verify
+
+            - name: Build fat JAR
+              run: |
+                  cd nf-mapper
+                  mvn package -DskipTests
+                  ls -lh target/nf-mapper-*.jar

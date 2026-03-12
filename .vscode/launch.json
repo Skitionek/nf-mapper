@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Debug nf-mapper CLI",
+      "request": "launch",
+      "mainClass": "com.nfmapper.cli.NfMapperCli",
+      "projectName": "nf-mapper",
+      "args": "src/test/resources/fixtures/simple_workflow.nf",
+      "cwd": "${workspaceFolder}/nf-mapper"
+    },
+    {
+      "type": "java",
+      "name": "Debug nf-mapper CLI (with output)",
+      "request": "launch",
+      "mainClass": "com.nfmapper.cli.NfMapperCli",
+      "projectName": "nf-mapper",
+      "args": "src/test/resources/fixtures/simple_workflow.nf -o /tmp/output.mmd --format md",
+      "cwd": "${workspaceFolder}/nf-mapper"
+    },
+    {
+      "type": "java",
+      "name": "Debug Current Test File",
+      "request": "launch",
+      "mainClass": "",
+      "projectName": "nf-mapper",
+      "cwd": "${workspaceFolder}/nf-mapper"
+    },
+    {
+      "type": "java",
+      "name": "Debug All Tests",
+      "request": "launch",
+      "mainClass": "",
+      "projectName": "nf-mapper",
+      "preLaunchTask": "maven: test",
+      "cwd": "${workspaceFolder}/nf-mapper"
+    }
+  ]
+}

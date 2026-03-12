@@ -4,7 +4,9 @@ nf-mapper/target/
 # IDE files
 .idea/
 *.iml
-.vscode/
+# VS Code workspace-specific files (keep .vscode/settings.json, tasks.json, launch.json, extensions.json)
+.vscode/*.code-workspace
+.vscode/.history/
 *.classpath
 *.project
 .settings/

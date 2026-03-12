@@ -1,0 +1,70 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "maven: verify",
+      "type": "shell",
+      "command": "mvn clean verify",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/nf-mapper"
+      },
+      "problemMatcher": ["$maven-compiler-plugin"]
+    },
+    {
+      "label": "maven: test",
+      "type": "shell",
+      "command": "mvn test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/nf-mapper"
+      },
+      "problemMatcher": ["$maven-compiler-plugin"]
+    },
+    {
+      "label": "maven: package",
+      "type": "shell",
+      "command": "mvn package -DskipTests",
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}/nf-mapper"
+      },
+      "problemMatcher": ["$maven-compiler-plugin"]
+    },
+    {
+      "label": "maven: clean",
+      "type": "shell",
+      "command": "mvn clean",
+      "options": {
+        "cwd": "${workspaceFolder}/nf-mapper"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run: simple_workflow.nf",
+      "type": "shell",
+      "command": "java -jar target/nf-mapper-1.0.0.jar src/test/resources/fixtures/simple_workflow.nf",
+      "options": {
+        "cwd": "${workspaceFolder}/nf-mapper"
+      },
+      "dependsOn": ["maven: package"],
+      "problemMatcher": []
+    },
+    {
+      "label": "run: snapshot tests",
+      "type": "shell",
+      "command": "mvn test -Dtest=Snapshot*",
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}/nf-mapper"
+      },
+      "problemMatcher": ["$maven-compiler-plugin"]
+    }
+  ]
+}
