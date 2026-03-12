@@ -89,7 +89,9 @@ class SnapshotTest {
         writeSnapshot("simple_workflow", diagram, "nf-mapper/src/test/resources/fixtures/simple_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"html\""));
+        // Two outputs: commit ID is "FASTQC: *", both patterns shown as tags
+        assertTrue(diagram.contains("commit id: \"FASTQC: *\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+            "Expected wildcard commit ID with both FASTQC output patterns as tags:\n" + diagram);
         assertTrue(diagram.contains("commit id: \"MULTIQC\""));
     }
 
@@ -100,7 +102,7 @@ class SnapshotTest {
         writeSnapshot("complex_workflow", diagram, "nf-mapper/src/test/resources/fixtures/complex_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("branch"));
-        assertTrue(diagram.contains("commit id: \"STAR_ALIGN: *.bam\" type: HIGHLIGHT tag: \"bam\""));
+        assertTrue(diagram.contains("commit id: \"STAR_ALIGN: *.bam\" type: HIGHLIGHT tag: \"*.bam\""));
     }
 
     @Test
@@ -110,8 +112,9 @@ class SnapshotTest {
         writeSnapshot("nf_core_fastqc_module", diagram, "nf-mapper/src/test/resources/fixtures/nf_core_fastqc_module.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"html\""));
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.zip\" type: HIGHLIGHT tag: \"zip\""));
+        // Two outputs (*.html, *.zip): commit ID is "FASTQC: *", both patterns shown as tags
+        assertTrue(diagram.contains("commit id: \"FASTQC: *\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+            "Expected wildcard commit ID with FASTQC output patterns as tags:\n" + diagram);
     }
 
     @Test
@@ -162,7 +165,7 @@ class SnapshotTest {
                 List.of(new String[]{"TRIM", "ALIGN"}, new String[]{"ALIGN", "SORT"}));
         String diagram = RENDERER.render(pipeline, "Channel Nodes Example", null);
         writeSnapshot("scenario_channel_nodes", diagram, null);
-        assertTrue(diagram.contains("commit id: \"ALIGN: *.bam\" type: HIGHLIGHT tag: \"bam\""));
+        assertTrue(diagram.contains("commit id: \"ALIGN: *.bam\" type: HIGHLIGHT tag: \"*.bam\""));
     }
 
     @Test
@@ -264,8 +267,9 @@ class SnapshotTest {
         }
         assertEquals(1, cherryPickCount,
             "Multiple cherry-picks should be aggregated into one:\n" + diagram);
-        assertTrue(diagram.contains("tag: \"+1 more\""),
-            "Expected '+1 more' tag for aggregated cherry-picks:\n" + diagram);
+        // With 2 cherry-picks, the 2nd channel ID is shown as an explicit tag
+        assertTrue(diagram.contains("tag: \"SORT: *.sorted.bam\""),
+            "Expected 2nd channel shown as tag in aggregated cherry-pick:\n" + diagram);
     }
 
     @Test

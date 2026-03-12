@@ -10,16 +10,16 @@ title: If-Statement Workflow
 gitGraph LR:
    checkout main
    commit id: "TRIM"
-   commit id: "TRIM: *.trimmed.fastq.gz" type: HIGHLIGHT tag: "gz"
+   commit id: "TRIM: *.trimmed.fastq.gz" type: HIGHLIGHT tag: "*.trimmed.fastq.gz"
    commit id: "ALIGN"
-   commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "bam"
+   commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "*.bam"
    branch QC
    checkout QC
    cherry-pick id: "ALIGN: *.bam"
    commit id: "if: QC" type: REVERSE
    commit id: "QC"
-   commit id: "QC: *.qc.txt" type: HIGHLIGHT tag: "txt"
+   commit id: "QC: *.qc.txt" type: HIGHLIGHT tag: "*.qc.txt"
    checkout main
    commit id: "COUNT"
-   commit id: "COUNT: *.counts.txt" type: HIGHLIGHT tag: "txt"
+   commit id: "COUNT: *.counts.txt" type: HIGHLIGHT tag: "*.counts.txt"
 ```

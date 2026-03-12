@@ -75,14 +75,16 @@ class MermaidRendererTest {
                                         Collections.emptyList(), Collections.emptyList(),
                                         List.of("*.bam"));
         String result = RENDERER.render(pipeline(proc));
-        assertTrue(result.contains("commit id: \"ALIGN: *.bam\" type: HIGHLIGHT tag: \"bam\""),
+        // Single output: tag shows full pattern name, not just extension
+        assertTrue(result.contains("commit id: \"ALIGN: *.bam\" type: HIGHLIGHT tag: \"*.bam\""),
             "Result was:\n" + result);
     }
 
     @Test void testMultipleCherryPicksAreAggregated() {
         // ALIGN and SORT are both on the main path (ALIGN → SORT → QC → REPORT).
         // MERGE is off-main and needs outputs from both ALIGN (*.bam) and SORT (*.sorted.bam).
-        // Instead of emitting two cherry-picks, they should be aggregated into one.
+        // Instead of emitting two cherry-picks, they should be aggregated into one
+        // with the second channel shown as an explicit tag.
         NfProcess align = new NfProcess("ALIGN", Collections.emptyList(), Collections.emptyList(),
                                          Collections.emptyList(), Collections.emptyList(), List.of("*.bam"));
         NfProcess sort = new NfProcess("SORT", Collections.emptyList(), Collections.emptyList(),
@@ -104,8 +106,9 @@ class MermaidRendererTest {
         }
         assertEquals(1, cherryPickCount,
             "Multiple sequential cherry-picks should be aggregated into one:\n" + result);
-        assertTrue(result.contains("tag: \"+1 more\""),
-            "Aggregated cherry-pick should have tag '+1 more':\n" + result);
+        // With 2 cherry-picks, the 2nd channel ID is shown as an explicit tag
+        assertTrue(result.contains("tag: \"SORT: *.sorted.bam\""),
+            "Aggregated cherry-pick should show 2nd channel as tag:\n" + result);
     }
 
     @Test void testCherryPickForCrossBranchChannels() {
@@ -145,8 +148,13 @@ class MermaidRendererTest {
                                         Collections.emptyList(), Collections.emptyList(),
                                         List.of("*.html", "*.zip"));
         String result = RENDERER.render(pipeline(proc));
-        assertTrue(result.contains("\"FASTQC: *.html\" type: HIGHLIGHT tag: \"html\""));
-        assertTrue(result.contains("\"FASTQC: *.zip\" type: HIGHLIGHT tag: \"zip\""));
+        // 2 outputs: commit ID is "PROC: *", both patterns shown as tags
+        assertTrue(result.contains("\"FASTQC: *\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+            "Expected wildcard commit ID with both output patterns as tags:\n" + result);
+        assertFalse(result.contains("\"FASTQC: *.html\" type: HIGHLIGHT"),
+            "First output pattern should not appear as commit ID:\n" + result);
+        assertFalse(result.contains("\"FASTQC: *.zip\" type: HIGHLIGHT"),
+            "Second output should not appear as a separate HIGHLIGHT commit:\n" + result);
     }
 
     @Test void testBranchNamedAfterProcess() {

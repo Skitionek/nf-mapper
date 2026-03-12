@@ -8,9 +8,9 @@ title: Channel Nodes Example
 gitGraph LR:
    checkout main
    commit id: "TRIM"
-   commit id: "TRIM: *.trimmed.fastq.gz" type: HIGHLIGHT tag: "gz"
+   commit id: "TRIM: *.trimmed.fastq.gz" type: HIGHLIGHT tag: "*.trimmed.fastq.gz"
    commit id: "ALIGN"
-   commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "bam"
+   commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "*.bam"
    commit id: "SORT"
-   commit id: "SORT: *.sorted.bam" type: HIGHLIGHT tag: "bam"
+   commit id: "SORT: *.sorted.bam" type: HIGHLIGHT tag: "*.sorted.bam"
 ```

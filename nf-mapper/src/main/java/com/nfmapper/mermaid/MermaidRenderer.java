@@ -156,6 +156,49 @@ public class MermaidRenderer {
     }
 
     /**
+     * Emit a single aggregated HIGHLIGHT commit for the outputs of {@code procName}.
+     * Up to 2 output patterns are shown as tags (full name, e.g. {@code *.yml});
+     * any further outputs are summarised as a {@code +N more} tag on the third slot.
+     * All channel IDs are registered in {@code channelBranch} (when non-null) so that
+     * downstream cherry-pick logic can still discover them.
+     *
+     * @param channelBranch branch-tracking map; may be {@code null} when branch tracking
+     *                      is not required (e.g. flat rendering, which has no cherry-picks)
+     * @param currentBranch the branch currently being written to; ignored when
+     *                      {@code channelBranch} is {@code null}
+     */
+    private void emitAggregatedChannelHighlights(List<String> lines,
+                                                   String procName,
+                                                   Map<String, NfProcess> procLookup,
+                                                   Map<String, String> channelBranch,
+                                                   String currentBranch) {
+        List<String[]> channels = channelIdsWithExt(procName, procLookup);
+        if (channels.isEmpty()) return;
+        // Register all channel IDs in the branch map so downstream processes can
+        // discover which branch they were produced on (used by cherry-pick detection).
+        if (channelBranch != null) {
+            for (String[] cidExt : channels) channelBranch.put(cidExt[0], currentBranch);
+        }
+        // Build the commit: when there are multiple outputs, use "PROC: *" as the commit
+        // ID to signal that it covers several patterns; for a single output, use the exact
+        // channel ID so the node name precisely reflects the one output pattern.
+        int n = channels.size();
+        String cid = n == 1 ? channels.get(0)[0] : procName + ": *";
+        StringBuilder sb = new StringBuilder("   commit id: \"").append(cid).append("\" type: HIGHLIGHT");
+        int tagsToShow = Math.min(n, 2);
+        for (int i = 0; i < tagsToShow; i++) {
+            // Extract the raw pattern from the channel ID ("PROC: *.pattern" → "*.pattern")
+            String pattern = channels.get(i)[0].substring(procName.length() + 2);
+            sb.append(" tag: \"").append(pattern).append("\"");
+        }
+        int remaining = n - tagsToShow;
+        if (remaining > 0) {
+            sb.append(" tag: \"+").append(remaining).append(" more\"");
+        }
+        lines.add(sb.toString());
+    }
+
+    /**
      * Emit a process commit (with preceding cherry-picks and following channel HIGHLIGHT
      * commits).  If {@code processName} is a conditional call (recorded in
      * {@code conditionalInfo}), a {@code type: REVERSE} commit is emitted first as an
@@ -172,9 +215,9 @@ public class MermaidRenderer {
                                        String currentBranch,
                                        Map<String, String[]> conditionalInfo) {
         // 1. Collect predecessor channels committed on a different branch, then emit a
-        //    single aggregated cherry-pick to reduce visual clutter.  When more than one
-        //    channel needs to be cherry-picked the first ID is used and a "+N more" tag
-        //    summarises the remaining ones.
+        //    single aggregated cherry-pick to reduce visual clutter.  The second channel
+        //    ID (if any) is shown as an explicit tag; further ones are summarised as
+        //    "+N more" on a second tag slot.
         List<String> cherryPickIds = new ArrayList<>();
         for (String src : predecessors.getOrDefault(procName, Collections.emptyList())) {
             for (String[] cidExt : channelIdsWithExt(src, procLookup)) {
@@ -185,10 +228,15 @@ public class MermaidRenderer {
             }
         }
         if (!cherryPickIds.isEmpty()) {
-            String cid = cherryPickIds.get(0);
+            StringBuilder sb = new StringBuilder("   cherry-pick id: \"").append(cherryPickIds.get(0)).append("\"");
             int extras = cherryPickIds.size() - 1;
-            String tagPart = extras > 0 ? " tag: \"+" + extras + " more\"" : "";
-            lines.add("   cherry-pick id: \"" + cid + "\"" + tagPart);
+            if (extras >= 1) {
+                sb.append(" tag: \"").append(cherryPickIds.get(1)).append("\"");
+            }
+            if (extras > 1) {
+                sb.append(" tag: \"+").append(extras - 1).append(" more\"");
+            }
+            lines.add(sb.toString());
         }
 
         // 2. If-statement node (for conditional calls) – one per process, always unique
@@ -200,14 +248,8 @@ public class MermaidRenderer {
         // 3. Process commit
         lines.add("   commit id: \"" + procName + "\"");
 
-        // 4. Output channel HIGHLIGHT commits
-        for (String[] cidExt : channelIdsWithExt(procName, procLookup)) {
-            String cid = cidExt[0];
-            String ext = cidExt[1];
-            String tagPart = ext != null ? " tag: \"" + ext + "\"" : "";
-            lines.add("   commit id: \"" + cid + "\" type: HIGHLIGHT" + tagPart);
-            channelBranch.put(cid, currentBranch);
-        }
+        // 4. Output channel HIGHLIGHT commits (aggregated into one when there are multiple)
+        emitAggregatedChannelHighlights(lines, procName, procLookup, channelBranch, currentBranch);
     }
 
     // -------------------------------------------------------------------------
@@ -333,12 +375,7 @@ public class MermaidRenderer {
                 lines.add("   commit id: \"if: " + name + "\" type: REVERSE");
             }
             lines.add("   commit id: \"" + name + "\"");
-            for (String[] cidExt : channelIdsWithExt(name, procLookup)) {
-                String cid = cidExt[0];
-                String ext = cidExt[1];
-                String tagPart = ext != null ? " tag: \"" + ext + "\"" : "";
-                lines.add("   commit id: \"" + cid + "\" type: HIGHLIGHT" + tagPart);
-            }
+            emitAggregatedChannelHighlights(lines, name, procLookup, null, null);
         }
     }
 
@@ -452,12 +489,8 @@ public class MermaidRenderer {
                     }
                     lines.add("   merge " + bname);
                     emitted.add(mergeTarget);
-                    for (String[] cidExt : channelIdsWithExt(mergeTarget, procLookup)) {
-                        String cid = cidExt[0]; String ext = cidExt[1];
-                        String tagPart = ext != null ? " tag: \"" + ext + "\"" : "";
-                        lines.add("   commit id: \"" + cid + "\" type: HIGHLIGHT" + tagPart);
-                        channelBranch.put(cid, currentBranch[0]);
-                    }
+                    emitAggregatedChannelHighlights(lines, mergeTarget, procLookup,
+                                                    channelBranch, currentBranch[0]);
                 } else {
                     lines.add("   checkout main");
                     currentBranch[0] = "main";
