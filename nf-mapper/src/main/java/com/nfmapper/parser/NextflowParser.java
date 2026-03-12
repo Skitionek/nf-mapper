@@ -17,23 +17,6 @@ import java.util.regex.Pattern;
 /**
  * Parses Nextflow {@code .nf} files using the native Nextflow AST library
  * ({@code io.nextflow:nf-lang}).
- *
- * <p>The Nextflow script parser ({@link ScriptAstBuilder}) builds a {@link ScriptNode}
- * which is a {@link ModuleNode} subclass that exposes the Nextflow DSL constructs
- * directly via typed getters:
- *
- * <ul>
- *   <li>{@link ScriptNode#getProcesses()} – all {@link ProcessNode} instances, each with
- *       pre-split {@code directives}, {@code inputs}, and {@code outputs} blocks.</li>
- *   <li>{@link ScriptNode#getWorkflows()} – all {@link WorkflowNode} instances, each with
- *       {@code takes}, {@code main}, and {@code emits} blocks; {@link WorkflowNode#isEntry()}
- *       distinguishes the unnamed entry workflow.</li>
- *   <li>{@link ScriptNode#getIncludes()} – all {@link IncludeNode} instances, each holding
- *       the source path and a list of {@link IncludeModuleNode} name/alias pairs.</li>
- * </ul>
- *
- * <p>This avoids manually walking the raw Groovy AST and is far more robust than
- * pattern-matching on raw {@code MethodCallExpression} trees.
  */
 public class NextflowParser {
 
@@ -66,6 +49,7 @@ public class NextflowParser {
         List<NfWorkflow> workflows = new ArrayList<>();
         List<NfInclude> includes = new ArrayList<>();
         List<String[]> connections = new ArrayList<>();
+        Map<String, String[]> conditionalInfo = new LinkedHashMap<>();
         Set<String> knownProcesses = new LinkedHashSet<>();
 
         // --- Includes ---
@@ -73,12 +57,9 @@ public class NextflowParser {
             String path = inc.source.getValue() instanceof String s ? s : String.valueOf(inc.source.getValue());
             List<String> imports = new ArrayList<>();
             for (IncludeModuleNode mod : inc.modules) {
-                // Use alias when present (that is what callers will use), but also track
-                // the original name so connections can be resolved correctly.
                 String effective = (mod.alias != null && !mod.alias.isEmpty()) ? mod.alias : mod.name;
                 imports.add(effective);
                 knownProcesses.add(effective);
-                // Also register the original name in knownProcesses for alias-less usage
                 if (mod.alias != null && !mod.alias.isEmpty()) {
                     knownProcesses.add(mod.name);
                 }
@@ -93,16 +74,26 @@ public class NextflowParser {
             knownProcesses.add(nfProc.getName());
         }
 
-        // --- Workflows ---
+        // --- Pre-pass: register ALL named workflow names so forward-references are detected ---
         for (WorkflowNode wf : script.getWorkflows()) {
-            NfWorkflow nfWf = extractWorkflow(wf, knownProcesses, connections);
+            if (!wf.isEntry() && wf.getName() != null) {
+                knownProcesses.add(wf.getName());
+            }
+        }
+
+        // --- Workflows ---
+        int[] ifGroupCounter = {0};
+        for (WorkflowNode wf : script.getWorkflows()) {
+            NfWorkflow nfWf = extractWorkflow(wf, knownProcesses, connections,
+                                              conditionalInfo, ifGroupCounter);
             workflows.add(nfWf);
             if (nfWf.getName() != null) {
                 knownProcesses.add(nfWf.getName());
             }
         }
 
-        return new ParsedPipeline(processes, workflows, includes, deduplicateConnections(connections));
+        return new ParsedPipeline(processes, workflows, includes,
+                                  deduplicateConnections(connections), conditionalInfo);
     }
 
     // -------------------------------------------------------------------------
@@ -116,7 +107,6 @@ public class NextflowParser {
         List<String> inputs = new ArrayList<>();
         List<String> outputs = new ArrayList<>();
 
-        // directives block: container, conda, template (already separated by nf-lang)
         if (proc.directives instanceof BlockStatement bs) {
             for (Statement stmt : bs.getStatements()) {
                 if (!(stmt instanceof ExpressionStatement es)) continue;
@@ -130,10 +120,7 @@ public class NextflowParser {
             }
         }
 
-        // inputs block (already separated by nf-lang)
         collectPathPatterns(proc.inputs, inputs);
-
-        // outputs block (already separated by nf-lang)
         collectPathPatterns(proc.outputs, outputs);
 
         return new NfProcess(proc.getName(), containers, condas, templates, inputs, outputs);
@@ -145,49 +132,73 @@ public class NextflowParser {
 
     private NfWorkflow extractWorkflow(WorkflowNode wf,
                                         Set<String> knownProcesses,
-                                        List<String[]> connections) {
+                                        List<String[]> connections,
+                                        Map<String, String[]> conditionalInfo,
+                                        int[] ifGroupCounter) {
         String name = wf.isEntry() ? null : wf.getName();
         if (wf.main == null) return new NfWorkflow(name, Collections.emptyList());
 
-        // Build channel variable map (two passes for transitivity)
         Map<String, String> channelVarMap = new LinkedHashMap<>();
         buildChannelVarMap(wf.main, knownProcesses, channelVarMap);
         buildChannelVarMap(wf.main, knownProcesses, channelVarMap);
 
         List<String> calls = new ArrayList<>();
-        collectWorkflowCalls(wf.main, knownProcesses, channelVarMap, calls, connections);
+        collectWorkflowCalls(wf.main, knownProcesses, channelVarMap, calls, connections,
+                             conditionalInfo, null, ifGroupCounter);
 
         return new NfWorkflow(name, calls);
     }
 
     /**
      * Recursively walk the workflow main block, capturing process calls and connections.
-     * Handles nested {@link IfStatement}, {@link WhileStatement}, and {@link ForStatement}
-     * so that calls inside conditional blocks are captured.
+     * Calls inside {@code if}/{@code else} blocks are tagged in {@code conditionalInfo}
+     * with a group-id and the condition text extracted from the {@link IfStatement}.
+     *
+     * @param conditionContext {@code null} when not inside any {@code if} block;
+     *                         otherwise {@code "groupId:conditionText"}.
      */
     private void collectWorkflowCalls(Statement stmt,
                                        Set<String> knownProcesses,
                                        Map<String, String> channelVarMap,
                                        List<String> calls,
-                                       List<String[]> connections) {
+                                       List<String[]> connections,
+                                       Map<String, String[]> conditionalInfo,
+                                       String conditionContext,
+                                       int[] ifGroupCounter) {
         if (stmt == null) return;
         if (stmt instanceof BlockStatement bs) {
             for (Statement child : bs.getStatements()) {
-                collectWorkflowCalls(child, knownProcesses, channelVarMap, calls, connections);
+                collectWorkflowCalls(child, knownProcesses, channelVarMap, calls, connections,
+                                     conditionalInfo, conditionContext, ifGroupCounter);
             }
         } else if (stmt instanceof IfStatement is) {
-            collectWorkflowCalls(is.getIfBlock(), knownProcesses, channelVarMap, calls, connections);
-            collectWorkflowCalls(is.getElseBlock(), knownProcesses, channelVarMap, calls, connections);
+            int groupId = ifGroupCounter[0]++;
+            String condText = extractConditionText(is);
+            String ifContext = groupId + ":" + condText;
+            collectWorkflowCalls(is.getIfBlock(), knownProcesses, channelVarMap, calls,
+                                  connections, conditionalInfo, ifContext, ifGroupCounter);
+            if (is.getElseBlock() != null) {
+                int elseGroupId = ifGroupCounter[0]++;
+                String elseContext = elseGroupId + ":else(" + condText + ")";
+                collectWorkflowCalls(is.getElseBlock(), knownProcesses, channelVarMap, calls,
+                                     connections, conditionalInfo, elseContext, ifGroupCounter);
+            }
         } else if (stmt instanceof WhileStatement ws) {
-            collectWorkflowCalls(ws.getLoopBlock(), knownProcesses, channelVarMap, calls, connections);
+            collectWorkflowCalls(ws.getLoopBlock(), knownProcesses, channelVarMap, calls,
+                                  connections, conditionalInfo, conditionContext, ifGroupCounter);
         } else if (stmt instanceof ForStatement fs) {
-            collectWorkflowCalls(fs.getLoopBlock(), knownProcesses, channelVarMap, calls, connections);
+            collectWorkflowCalls(fs.getLoopBlock(), knownProcesses, channelVarMap, calls,
+                                  connections, conditionalInfo, conditionContext, ifGroupCounter);
         } else if (stmt instanceof ExpressionStatement es) {
             Expression expr = es.getExpression();
             if (expr instanceof MethodCallExpression mce) {
                 String method = mce.getMethodAsString();
                 if (method != null && knownProcesses.contains(method)) {
                     if (!calls.contains(method)) calls.add(method);
+                    if (conditionContext != null && !conditionalInfo.containsKey(method)) {
+                        String[] parts = conditionContext.split(":", 2);
+                        conditionalInfo.put(method, parts);
+                    }
                     Set<String> outRefs = new LinkedHashSet<>();
                     for (Expression arg : getArgs(mce)) {
                         collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
@@ -226,7 +237,6 @@ public class NextflowParser {
     private void scanForChannelAssignments(Expression expr, Set<String> knownProcesses,
                                             Map<String, String> channelVarMap) {
         if (expr == null) return;
-        // Pattern 1: ch = PROC.out.x
         if (expr instanceof BinaryExpression be) {
             Token op = be.getOperation();
             if ("=".equals(op.getText()) && be.getLeftExpression() instanceof VariableExpression ve) {
@@ -238,7 +248,6 @@ public class NextflowParser {
                 }
             }
         }
-        // Pattern 2: expr.set { ch_var }
         if (expr instanceof MethodCallExpression mce && "set".equals(mce.getMethodAsString())) {
             List<Expression> args = getArgs(mce);
             if (!args.isEmpty() && args.get(0) instanceof ClosureExpression ce) {
@@ -295,7 +304,7 @@ public class NextflowParser {
     }
 
     // -------------------------------------------------------------------------
-    // Path pattern extraction (input/output sections – already separated by nf-lang)
+    // Path pattern extraction
     // -------------------------------------------------------------------------
 
     private void collectPathPatterns(Statement stmt, List<String> result) {
@@ -348,6 +357,24 @@ public class NextflowParser {
         return Optional.empty();
     }
 
+    /**
+     * Extract a human-readable condition text from an {@link IfStatement}.
+     * The result is truncated to 50 chars and sanitised for use as a Mermaid commit ID.
+     */
+    private String extractConditionText(IfStatement is) {
+        try {
+            String text = is.getBooleanExpression().getExpression().getText();
+            text = text.replaceAll("\\s+", " ").trim();
+            text = text.replaceAll("\\bthis\\.", "");
+            text = text.replace("\"", "'").replace("\\", "/");
+            if (text.length() > 50) text = text.substring(0, 47) + "...";
+            return text.isEmpty() ? "condition" : text;
+        } catch (NullPointerException | UnsupportedOperationException e) {
+            // AST node may lack a text representation – fall back to a generic label
+            return "condition";
+        }
+    }
+
     private static final Pattern SPACE_SPLIT = Pattern.compile("[ \\t]+");
 
     private List<String> splitConda(String value) {
@@ -367,6 +394,6 @@ public class NextflowParser {
 
     private static ParsedPipeline empty() {
         return new ParsedPipeline(Collections.emptyList(), Collections.emptyList(),
-                                  Collections.emptyList(), Collections.emptyList());
+                                   Collections.emptyList(), Collections.emptyList());
     }
 }

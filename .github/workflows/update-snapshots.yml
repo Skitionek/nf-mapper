@@ -1,0 +1,56 @@
+name: Update snapshots
+
+# Regenerates the Mermaid snapshot files (snapshots/*.md) on every PR that
+# touches the source code or fixture files, and commits them back so the
+# visual diagrams always reflect the current renderer output.
+#
+# On push to main the updated snapshots are committed back automatically.
+# Same-repo PR branches are also updated; fork PRs skip the commit step
+# (they can't push to the target repo).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "nf-mapper/**"
+  pull_request:
+    paths:
+      - "nf-mapper/**"
+
+permissions:
+  contents: write
+
+jobs:
+  update-snapshots:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Check out the actual PR branch so we can push back to it.
+          ref: ${{ github.head_ref || github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "maven"
+
+      - name: Run tests (regenerates snapshots/*.md)
+        working-directory: nf-mapper
+        run: mvn test -q
+
+      - name: Commit updated snapshots
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add snapshots/
+          git diff --cached --quiet || \
+            git commit -m "test: regenerate Mermaid snapshots [skip ci]" && \
+            git push

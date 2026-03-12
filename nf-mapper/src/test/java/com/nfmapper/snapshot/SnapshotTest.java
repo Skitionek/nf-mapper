@@ -122,6 +122,23 @@ class SnapshotTest {
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("branch"));
         assertTrue(diagram.contains("commit id: \"SRA_IDS_TO_RUNINFO\""));
+        // Processes inside the if block should have an if-node
+        assertTrue(diagram.contains("type: REVERSE"),
+            "Expected if-node (type: REVERSE) for conditional processes");
+    }
+
+    @Test
+    void testSnapshotIfWorkflow() throws IOException {
+        ParsedPipeline pipeline = PARSER.parseFile(fixture("if_workflow.nf"));
+        String diagram = RENDERER.render(pipeline, "If-Statement Workflow", null);
+        writeSnapshot("if_workflow", diagram, "nf-mapper/src/test/resources/fixtures/if_workflow.nf");
+        assertTrue(diagram.contains("gitGraph"));
+        // QC is inside an if block – should produce an if-node
+        assertTrue(diagram.contains("type: REVERSE"),
+            "Expected if-node for QC inside if block:\n" + diagram);
+        // COUNT_WF is a named sub-workflow – should appear in the diagram
+        assertTrue(diagram.contains("commit id: \"COUNT_WF\"") || diagram.contains("commit id: \"COUNT\""),
+            "Expected COUNT_WF or COUNT to appear in diagram:\n" + diagram);
     }
 
     // -------------------------------------------------------------------------
