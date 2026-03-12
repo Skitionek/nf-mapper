@@ -234,6 +234,41 @@ class SnapshotTest {
     }
 
     @Test
+    void testSnapshotMultiCherryPick() throws IOException {
+        // ALIGN → SORT → QC → REPORT (main path).
+        // MERGE is off-main and needs outputs from both ALIGN (*.bam) and SORT (*.sorted.bam).
+        // The two cherry-picks should be aggregated into a single cherry-pick node.
+        ParsedPipeline pipeline = makePipeline(
+                List.of(
+                        new NfProcess("ALIGN", Collections.emptyList(), Collections.emptyList(),
+                                Collections.emptyList(), Collections.emptyList(),
+                                List.of("*.bam")),
+                        new NfProcess("SORT", Collections.emptyList(), Collections.emptyList(),
+                                Collections.emptyList(), Collections.emptyList(),
+                                List.of("*.sorted.bam")),
+                        new NfProcess("QC"),
+                        new NfProcess("REPORT"),
+                        new NfProcess("MERGE")),
+                null,
+                List.of(
+                        new String[]{"ALIGN", "SORT"}, new String[]{"SORT", "QC"},
+                        new String[]{"QC", "REPORT"},
+                        new String[]{"ALIGN", "MERGE"}, new String[]{"SORT", "MERGE"}));
+        String diagram = RENDERER.render(pipeline, "Multi Cherry-Pick Example", null);
+        writeSnapshot("scenario_multi_cherry_pick", diagram, null);
+        assertTrue(diagram.contains("cherry-pick"), "Expected cherry-pick in diagram:\n" + diagram);
+        // Aggregated into a single cherry-pick
+        int cherryPickCount = 0;
+        for (String line : diagram.split("\n")) {
+            if (line.trim().startsWith("cherry-pick")) cherryPickCount++;
+        }
+        assertEquals(1, cherryPickCount,
+            "Multiple cherry-picks should be aggregated into one:\n" + diagram);
+        assertTrue(diagram.contains("tag: \"+1 more\""),
+            "Expected '+1 more' tag for aggregated cherry-picks:\n" + diagram);
+    }
+
+    @Test
     void testSnapshotMainFileRefs() throws IOException {
         ParsedPipeline pipeline = PARSER.parseFile(fixture("main_file_refs.nf"));
         String diagram = RENDERER.render(pipeline, "Main Block File Refs", null);

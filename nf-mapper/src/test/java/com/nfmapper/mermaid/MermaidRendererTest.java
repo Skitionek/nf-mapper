@@ -79,6 +79,35 @@ class MermaidRendererTest {
             "Result was:\n" + result);
     }
 
+    @Test void testMultipleCherryPicksAreAggregated() {
+        // ALIGN and SORT are both on the main path (ALIGN → SORT → QC → REPORT).
+        // MERGE is off-main and needs outputs from both ALIGN (*.bam) and SORT (*.sorted.bam).
+        // Instead of emitting two cherry-picks, they should be aggregated into one.
+        NfProcess align = new NfProcess("ALIGN", Collections.emptyList(), Collections.emptyList(),
+                                         Collections.emptyList(), Collections.emptyList(), List.of("*.bam"));
+        NfProcess sort = new NfProcess("SORT", Collections.emptyList(), Collections.emptyList(),
+                                        Collections.emptyList(), Collections.emptyList(), List.of("*.sorted.bam"));
+        NfProcess qc = new NfProcess("QC");
+        NfProcess report = new NfProcess("REPORT");
+        NfProcess merge = new NfProcess("MERGE");
+        ParsedPipeline p = pipeline(
+            List.of(align, sort, qc, report, merge),
+            List.of(
+                new String[]{"ALIGN", "SORT"}, new String[]{"SORT", "QC"},
+                new String[]{"QC", "REPORT"},
+                new String[]{"ALIGN", "MERGE"}, new String[]{"SORT", "MERGE"}
+            ));
+        String result = RENDERER.render(p);
+        int cherryPickCount = 0;
+        for (String line : result.split("\n")) {
+            if (line.trim().startsWith("cherry-pick")) cherryPickCount++;
+        }
+        assertEquals(1, cherryPickCount,
+            "Multiple sequential cherry-picks should be aggregated into one:\n" + result);
+        assertTrue(result.contains("tag: \"+1 more\""),
+            "Aggregated cherry-pick should have tag '+1 more':\n" + result);
+    }
+
     @Test void testCherryPickForCrossBranchChannels() {
         // ALIGN on main (with *.bam output), SORT on branch taking ALIGN.bam
         // ALIGN → QC (main chain); ALIGN → SORT (branch)
