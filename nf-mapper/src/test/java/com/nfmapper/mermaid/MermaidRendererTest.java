@@ -31,7 +31,7 @@ class MermaidRendererTest {
         assertTrue(lines[0].contains("'git0': '#24B064'"), "Expected nf-core green in themeVariables");
         // gitGraph section
         assertTrue(lines[0].contains("'showBranches': true"), "Expected showBranches:true in init");
-        assertTrue(lines[0].contains("'parallelCommits': true"), "Expected parallelCommits:true in init");
+        assertTrue(lines[0].contains("'parallelCommits': false"), "Expected parallelCommits:false in init");
         assertEquals("gitGraph LR:", lines[1]);
         assertEquals("   checkout main", lines[2]);
     }
@@ -100,7 +100,7 @@ class MermaidRendererTest {
         config.put("showBranches", false);  // override the default (true) to false
         String result = RENDERER.render(pipeline(), null, config);
         assertTrue(result.contains("'showBranches': false"), "Expected showBranches:false after override");
-        assertTrue(result.contains("'parallelCommits': true"), "Default parallelCommits should be preserved");
+        assertTrue(result.contains("'parallelCommits': false"), "Default parallelCommits:false should be preserved");
     }
 
     @Test void testNoFlowchartKeyword() {
