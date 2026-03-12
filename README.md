@@ -8,7 +8,7 @@
 **Convert Nextflow pipelines into [Mermaid](https://mermaid.js.org/) `gitGraph` diagrams.**
 
 nf-mapper parses `.nf` files using the [official Nextflow AST library](https://www.nextflow.io/docs/latest/developer/nextflow.ast.html)
-(`io.nextflow:nf-lang`) and renders the pipeline's process graph as a metro-map-style `gitGraph`:
+(`io.nextflow:nf-lang`) and renders the pipeline's process graph as a `gitGraph`:
 each process is a commit, the primary processing chain stays on `main`,
 and parallel or QC branches diverge just like in a real git history.
 
@@ -39,7 +39,7 @@ contributors — or your future self — without a reliable overview.
 
 nf-mapper solves this by **generating pipeline diagrams automatically from the
 source code itself**, so the documentation is always in sync with the actual
-workflow. Visualising the process graph as a metro-map-style `gitGraph` makes
+workflow. Visualising the process graph as a `gitGraph` makes
 it easy to:
 
 - **Understand new projects quickly** — spot the main processing chain, parallel
@@ -81,7 +81,6 @@ it easy to:
 - **Multiple renderers**:
   - `default` (`gitGraph`) – branch/main-path focused
   - `conditional` (`gitGraph`) – condition-group branches for if/else-heavy workflows
-  - `metro` (`gitGraph LR`) – left-to-right metro-map style
 - Available as a **CLI tool** (fat JAR), a **Docker image** and a **GitHub Action**
 
 ---
@@ -96,7 +95,7 @@ Reference: [https://nextflow.io/docs/latest/developer/nextflow.dag.html](https:/
 - In practice, `nextflow --with-dag` output can become hard to read for complex,
   heavily branched pipelines.
 - nf-mapper focuses on readability for large workflows by rendering a
-  metro-map-style Mermaid `gitGraph` with an explicit main path and side branches.
+  Mermaid `gitGraph` with an explicit main path and side branches.
 
 ### `nf-metro`
 
@@ -191,7 +190,7 @@ You can select these dimensions for CLI, `--update`, and `--regenerate`:
 
 | Dimension | Option | Values | Default |
 | --- | --- | --- | --- |
-| Renderer | `--renderer` | `default`, `conditional`, `metro` | `default` |
+| Renderer | `--renderer` | `default`, `conditional` | `default` |
 | Theme | `--theme` | `nf-core`, `plain` | `nf-core` |
 
 Renderer × theme diagram examples:
@@ -283,50 +282,6 @@ gitGraph LR:
    commit id: "COUNT" tag: "*.counts.txt"
 ```
 <!-- /nf-mapper:selection-conditional-plain -->
-
-### metro + nf-core
-
-<!-- nf-mapper:selection-metro-nfcore pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="metro/nf-core" format="md" renderer="metro" theme="nf-core" -->
-```mermaid
----
-title: metro/nf-core
----
-%%{init: {'theme': 'base', 'themeVariables': {'git0': '#24B064', 'gitInv0': '#ffffff', 'git1': '#FA7F19', 'gitInv1': '#ffffff', 'git2': '#0570b0', 'gitInv2': '#ffffff', 'git3': '#e63946', 'gitInv3': '#ffffff', 'git4': '#9b59b6', 'gitInv4': '#ffffff', 'git5': '#f5c542', 'gitInv5': '#000000', 'git6': '#1abc9c', 'gitInv6': '#ffffff', 'git7': '#7b2d3b', 'gitInv7': '#ffffff'}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
-gitGraph LR:
-   checkout main
-   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
-   commit id: "ALIGN" tag: "*.bam"
-   commit id: "if: params.run_qc" type: REVERSE
-   branch QC
-   checkout QC
-   cherry-pick id: "ALIGN"
-   commit id: "QC" tag: "*.qc.txt"
-   checkout main
-   commit id: "COUNT" tag: "*.counts.txt"
-```
-<!-- /nf-mapper:selection-metro-nfcore -->
-
-### metro + plain
-
-<!-- nf-mapper:selection-metro-plain pipeline="nf-mapper/src/test/resources/fixtures/if_workflow.nf" title="metro/plain" format="md" renderer="metro" theme="plain" -->
-```mermaid
----
-title: metro/plain
----
-%%{init: {'theme': 'default', 'themeVariables': {}, 'gitGraph': {'showBranches': true, 'parallelCommits': false}} }%%
-gitGraph LR:
-   checkout main
-   commit id: "TRIM" tag: "*.trimmed.fastq.gz"
-   commit id: "ALIGN" tag: "*.bam"
-   commit id: "if: params.run_qc" type: REVERSE
-   branch QC
-   checkout QC
-   cherry-pick id: "ALIGN"
-   commit id: "QC" tag: "*.qc.txt"
-   checkout main
-   commit id: "COUNT" tag: "*.counts.txt"
-```
-<!-- /nf-mapper:selection-metro-plain -->
 
 ---
 
@@ -458,7 +413,6 @@ Renderer-specific snapshot examples:
 
 - Default (`gitGraph`): [snapshots/simple_workflow_default.md](snapshots/simple_workflow_default.md)
 - Conditional (`gitGraph`): [snapshots/if_workflow_conditional_conditional.md](snapshots/if_workflow_conditional_conditional.md)
-- Metro (`gitGraph`): [snapshots/complex_workflow_metro_metro.md](snapshots/complex_workflow_metro_metro.md)
 
 ---
 
@@ -467,7 +421,7 @@ Renderer-specific snapshot examples:
 ```
 usage: nf-mapper [-h] [-o FILE | --update FILE | --regenerate FILE]
                  [--marker NAME] [--title TITLE] [--format {plain,md}]
-                 [--config JSON] [--renderer {default,conditional,metro}]
+                 [--config JSON] [--renderer {default,conditional}]
                  [--theme {nf-core,plain}]
                  [PIPELINE.NF]
 
@@ -494,7 +448,7 @@ options:
   --config JSON         JSON object of Mermaid gitGraph config overrides,
                          e.g. '{"showBranches": true}'. Merged with defaults:
                          showBranches=true, parallelCommits=false.
-  --renderer {default,conditional,metro}
+  --renderer {default,conditional}
                         Renderer strategy used to emit Mermaid output.
   --theme {nf-core,plain}
                         Theme class for Mermaid init/themeVariables.
@@ -511,7 +465,7 @@ attributes that are read back by `--regenerate`:
 | `title`       |          | Diagram title                                          |
 | `format`      |          | `plain` or `md` (default: `md`)                        |
 | `config`      |          | JSON object of Mermaid gitGraph config overrides       |
-| `renderer`    |          | `default`, `conditional`, or `metro`                   |
+| `renderer`    |          | `default`, `conditional`                               |
 | `theme`       |          | `nf-core` or `plain`                                   |
 
 Use unique marker names when a file contains multiple diagrams:
@@ -617,7 +571,7 @@ Then update each block independently:
 | `output`   |          | `diagram.md` | Output file path (ignored when `update` is set)                                                   |
 | `title`    |          | _(none)_     | Diagram title                                                                                     |
 | `format`   |          | `md`         | `plain` or `md`                                                                                   |
-| `renderer` |          | `default`    | Renderer strategy: `default`, `conditional`, `metro`                                              |
+| `renderer` |          | `default`    | Renderer strategy: `default`, `conditional`                                                       |
 | `theme`    |          | `nf-core`    | Theme class: `nf-core`, `plain`                                                                   |
 | `config`   |          | _(none)_     | JSON object of Mermaid gitGraph config overrides, e.g. `{"showBranches": true}`                   |
 | `update`   |          | _(none)_     | Path to a Markdown file with `<!-- MARKER -->` / `<!-- /MARKER -->` blocks to update in-place     |
