@@ -201,6 +201,37 @@ public class MermaidRenderer {
     }
 
     // -------------------------------------------------------------------------
+    // Main-block file reference helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Collect all unique file-reference patterns from the {@code main:} blocks of all
+     * workflows in the pipeline, preserving declaration order.
+     */
+    private List<String> collectAllMainFileRefs(ParsedPipeline pipeline) {
+        List<String> refs = new ArrayList<>();
+        for (NfWorkflow wf : pipeline.getWorkflows()) {
+            for (String ref : wf.getMainFileRefs()) {
+                if (!refs.contains(ref)) refs.add(ref);
+            }
+        }
+        return refs;
+    }
+
+    /**
+     * Emit a HIGHLIGHT commit for each file-reference pattern found in workflow
+     * {@code main:} blocks, placing them on the current ({@code main}) branch before
+     * any process commits.
+     */
+    private void emitMainFileRefCommits(List<String> lines, ParsedPipeline pipeline) {
+        for (String pattern : collectAllMainFileRefs(pipeline)) {
+            String ext = fileExtension(pattern);
+            String tagPart = ext != null ? " tag: \"" + ext + "\"" : "";
+            lines.add("   commit id: \"input: " + pattern + "\" type: HIGHLIGHT" + tagPart);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Flat rendering (no connections)
     // -------------------------------------------------------------------------
 
@@ -208,9 +239,16 @@ public class MermaidRenderer {
         List<String> ordered = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
 
+        // Named sub-workflows have been unfolded into processes; exclude them as
+        // independent graph nodes so they don't appear as orphan commits.
+        Set<String> namedWfNames = namedWorkflowNames(pipeline);
+
         Set<String> allProcessNames = new LinkedHashSet<>();
         for (NfProcess p : pipeline.getProcesses()) allProcessNames.add(p.getName());
-        for (NfInclude inc : pipeline.getIncludes()) allProcessNames.addAll(inc.getImports());
+        for (NfInclude inc : pipeline.getIncludes()) {
+            inc.getImports().stream().filter(imp -> !namedWfNames.contains(imp))
+                            .forEach(allProcessNames::add);
+        }
 
         for (NfWorkflow wf : pipeline.getWorkflows()) {
             for (String call : wf.getCalls()) {
@@ -258,6 +296,9 @@ public class MermaidRenderer {
 
         if (segments.isEmpty()) return;
 
+        // Emit file references from workflow main blocks before any process commits
+        emitMainFileRefCommits(lines, pipeline);
+
         // First segment always goes on main
         emitFlatSegment(lines, segments.get(0), "main", procLookup, conditionalInfo);
 
@@ -300,8 +341,15 @@ public class MermaidRenderer {
         Map<String, List<String>> predecessors = new LinkedHashMap<>();
         Set<String> nodes = new LinkedHashSet<>();
 
+        // Named sub-workflows have been unfolded; exclude them so they don't become
+        // orphan nodes that clutter the graph.
+        Set<String> namedWfNames = namedWorkflowNames(pipeline);
+
         for (NfProcess p : pipeline.getProcesses()) nodes.add(p.getName());
-        for (NfInclude inc : pipeline.getIncludes()) nodes.addAll(inc.getImports());
+        for (NfInclude inc : pipeline.getIncludes()) {
+            inc.getImports().stream().filter(imp -> !namedWfNames.contains(imp))
+                            .forEach(nodes::add);
+        }
         for (String[] conn : pipeline.getConnections()) {
             nodes.add(conn[0]); nodes.add(conn[1]);
             successors.computeIfAbsent(conn[0], k -> new ArrayList<>()).add(conn[1]);
@@ -356,6 +404,9 @@ public class MermaidRenderer {
 
         Set<String> emitted = new LinkedHashSet<>();
         final String[] currentBranch = {"main"};
+
+        // Emit file references from workflow main blocks before the first process commit
+        emitMainFileRefCommits(lines, pipeline);
 
         for (String node : mainPath) {
             if (!emitted.contains(node)) {
@@ -479,5 +530,17 @@ public class MermaidRenderer {
                 .filter(mainPath::contains).collect(Collectors.toList());
         if (candidates.isEmpty()) return null;
         return candidates.stream().max(Comparator.comparingInt(mainPath::indexOf)).orElse(null);
+    }
+
+    /**
+     * Returns the set of named (non-entry) workflow names in the pipeline.
+     * Used to exclude sub-workflows that have been unfolded from the graph node sets.
+     */
+    private Set<String> namedWorkflowNames(ParsedPipeline pipeline) {
+        Set<String> names = new LinkedHashSet<>();
+        for (NfWorkflow wf : pipeline.getWorkflows()) {
+            if (wf.getName() != null) names.add(wf.getName());
+        }
+        return names;
     }
 }

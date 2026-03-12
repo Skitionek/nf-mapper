@@ -11,11 +11,6 @@ gitGraph LR:
    checkout main
    commit id: "TRIM"
    commit id: "TRIM: *.trimmed.fastq.gz" type: HIGHLIGHT tag: "gz"
-   branch COUNT
-   checkout COUNT
-   commit id: "COUNT"
-   commit id: "COUNT: *.counts.txt" type: HIGHLIGHT tag: "txt"
-   checkout main
    commit id: "ALIGN"
    commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "bam"
    branch QC
@@ -25,5 +20,6 @@ gitGraph LR:
    commit id: "QC"
    commit id: "QC: *.qc.txt" type: HIGHLIGHT tag: "txt"
    checkout main
-   commit id: "COUNT_WF"
+   commit id: "COUNT"
+   commit id: "COUNT: *.counts.txt" type: HIGHLIGHT tag: "txt"
 ```

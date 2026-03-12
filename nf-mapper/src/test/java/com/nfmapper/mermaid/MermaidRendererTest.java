@@ -177,4 +177,68 @@ class MermaidRendererTest {
         assertTrue(result.contains("'git1': '#FA7F19'"), "Should have orange as git1");
         assertTrue(result.contains("'git2': '#0570b0'"), "Should have blue as git2");
     }
+
+    @Test void testMainBlockFileRefsShownAsHighlightCommits() {
+        // Flat rendering: file refs from workflow main block appear before processes
+        ParsedPipeline p = new ParsedPipeline(
+            List.of(new NfProcess("FASTQC")),
+            List.of(new NfWorkflow(null, List.of("FASTQC"), List.of("*.fastq.gz"))),
+            Collections.emptyList(),
+            Collections.emptyList()
+        );
+        String result = RENDERER.render(p);
+        assertTrue(result.contains("commit id: \"input: *.fastq.gz\" type: HIGHLIGHT"),
+            "Expected HIGHLIGHT commit for main-block file ref:\n" + result);
+        // File ref should appear before the process commit
+        int refIdx = result.indexOf("input: *.fastq.gz");
+        int procIdx = result.indexOf("commit id: \"FASTQC\"");
+        assertTrue(refIdx < procIdx,
+            "File ref commit should appear before process commit");
+    }
+
+    @Test void testMainBlockFileRefsTaggedWithExtension() {
+        ParsedPipeline p = new ParsedPipeline(
+            List.of(new NfProcess("PROC")),
+            List.of(new NfWorkflow(null, List.of("PROC"), List.of("data/*.bam"))),
+            Collections.emptyList(),
+            Collections.emptyList()
+        );
+        String result = RENDERER.render(p);
+        assertTrue(result.contains("tag: \"bam\""),
+            "Expected tag:bam for *.bam file ref:\n" + result);
+    }
+
+    @Test void testMainBlockFileRefsShownInDagRendering() {
+        // DAG rendering: file refs also appear before the first process
+        NfProcess a = new NfProcess("ALIGN");
+        NfProcess b = new NfProcess("SORT");
+        ParsedPipeline p = new ParsedPipeline(
+            List.of(a, b),
+            List.of(new NfWorkflow(null, List.of("ALIGN", "SORT"), List.of("*.fastq.gz"))),
+            Collections.emptyList(),
+            List.<String[]>of(new String[]{"ALIGN", "SORT"})
+        );
+        String result = RENDERER.render(p);
+        assertTrue(result.contains("commit id: \"input: *.fastq.gz\" type: HIGHLIGHT"),
+            "Expected HIGHLIGHT commit in DAG rendering:\n" + result);
+        int refIdx = result.indexOf("input: *.fastq.gz");
+        int procIdx = result.indexOf("commit id: \"ALIGN\"");
+        assertTrue(refIdx < procIdx,
+            "File ref commit should appear before first process commit in DAG mode");
+    }
+
+    @Test void testMultipleMainBlockFileRefs() {
+        ParsedPipeline p = new ParsedPipeline(
+            List.of(new NfProcess("PROC")),
+            List.of(new NfWorkflow(null, List.of("PROC"),
+                    List.of("samplesheet.csv", "*.fastq.gz"))),
+            Collections.emptyList(),
+            Collections.emptyList()
+        );
+        String result = RENDERER.render(p);
+        assertTrue(result.contains("input: samplesheet.csv"),
+            "Expected samplesheet.csv file ref:\n" + result);
+        assertTrue(result.contains("input: *.fastq.gz"),
+            "Expected *.fastq.gz file ref:\n" + result);
+    }
 }
