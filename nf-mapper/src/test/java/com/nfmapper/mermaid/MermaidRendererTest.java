@@ -209,7 +209,7 @@ class MermaidRendererTest {
     }
 
     @Test void testConditionalProcessUsesConditionTextAsNodeName() {
-        // Issue 2: the REVERSE node should display the condition expression, not "if: PROCNAME"
+        // The REVERSE node uses "if: conditionText" format – not bare text, not "if: PROCNAME"
         Map<String, String[]> conditionalInfo = new LinkedHashMap<>();
         conditionalInfo.put("QC", new String[]{"0", "params.run_qc"});
         ParsedPipeline p = new ParsedPipeline(
@@ -220,10 +220,37 @@ class MermaidRendererTest {
             conditionalInfo
         );
         String result = RENDERER.render(p);
-        assertTrue(result.contains("commit id: \"params.run_qc\" type: REVERSE"),
-            "Expected condition text as REVERSE node id:\n" + result);
+        assertTrue(result.contains("commit id: \"if: params.run_qc\" type: REVERSE"),
+            "Expected 'if: conditionText' as REVERSE node id:\n" + result);
         assertFalse(result.contains("commit id: \"if: QC\""),
             "Should not use 'if: PROCNAME' format:\n" + result);
+    }
+
+    @Test void testConditionalBranchDeclaredAfterIfNode() {
+        // In DAG rendering, the "if:" REVERSE node must appear on the parent branch BEFORE
+        // the branch declaration for the conditional process.
+        NfProcess align = new NfProcess("ALIGN");
+        NfProcess qc = new NfProcess("QC");
+        NfProcess count = new NfProcess("COUNT");
+        Map<String, String[]> conditionalInfo = new LinkedHashMap<>();
+        conditionalInfo.put("QC", new String[]{"0", "params.run_qc"});
+        ParsedPipeline p = new ParsedPipeline(
+            List.of(align, qc, count),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            List.<String[]>of(new String[]{"ALIGN", "QC"}, new String[]{"ALIGN", "COUNT"}),
+            conditionalInfo
+        );
+        String result = RENDERER.render(p);
+        // "if:" REVERSE should appear before the "branch QC" declaration
+        int ifIdx    = result.indexOf("commit id: \"if: params.run_qc\" type: REVERSE");
+        int branchIdx = result.indexOf("branch QC");
+        assertTrue(ifIdx >= 0,
+            "Expected 'if: params.run_qc' REVERSE node:\n" + result);
+        assertTrue(branchIdx >= 0,
+            "Expected 'branch QC':\n" + result);
+        assertTrue(ifIdx < branchIdx,
+            "if-node must appear before the branch declaration:\n" + result);
     }
 
     @Test void testNfMetromapThemePresent() {

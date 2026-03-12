@@ -11,10 +11,10 @@ gitGraph LR:
    checkout main
    commit id: "TRIM" tag: "*.trimmed.fastq.gz"
    commit id: "ALIGN" tag: "*.bam"
+   commit id: "if: params.run_qc" type: REVERSE
    branch QC
    checkout QC
    cherry-pick id: "ALIGN"
-   commit id: "params.run_qc" type: REVERSE
    commit id: "QC" tag: "*.qc.txt"
    checkout main
    commit id: "COUNT" tag: "*.counts.txt"

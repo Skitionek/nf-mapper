@@ -226,9 +226,15 @@ public class MermaidRenderer {
      *       different branch (omitted when all predecessors are on the same branch).
      *       References the process name directly (issue 3).</li>
      *   <li>Optional {@code type: REVERSE} commit if the call is inside an {@code if}
-     *       block; the commit ID is the condition expression text (issue 2).</li>
+     *       block; uses {@code "if: conditionText"} as the commit ID. Skipped when the
+     *       node's conditional group is already in {@code preEmittedGroups} (meaning the
+     *       if-node was emitted on the parent branch before the {@code branch} declaration).</li>
      *   <li>The process commit with output patterns as inline tags (issue 4).</li>
      * </ol>
+     *
+     * @param preEmittedGroups set of conditional groupIds whose {@code if:} REVERSE commit
+     *                         was already emitted before the branch declaration; nodes in
+     *                         these groups skip the inline REVERSE emit.
      */
     private void emitNodeWithChannels(List<String> lines,
                                        String procName,
@@ -236,7 +242,8 @@ public class MermaidRenderer {
                                        Map<String, List<String>> predecessors,
                                        Map<String, String> channelBranch,
                                        String currentBranch,
-                                       Map<String, String[]> conditionalInfo) {
+                                       Map<String, String[]> conditionalInfo,
+                                       Set<String> preEmittedGroups) {
         // 1. Input-file HIGHLIGHT – suppress when all inputs are covered by predecessor outputs.
         boolean suppressInput = false;
         NfProcess proc = procLookup.get(procName);
@@ -275,10 +282,11 @@ public class MermaidRenderer {
             lines.add(sb.toString());
         }
 
-        // 3. If-statement node – use condition expression text as commit ID (issue 2).
+        // 3. If-statement node – emit "if: condText" REVERSE, unless already emitted on the
+        //    parent branch before the branch declaration.
         String[] condInfo = conditionalInfo.get(procName);
-        if (condInfo != null) {
-            lines.add("   commit id: \"" + condInfo[1] + "\" type: REVERSE");
+        if (condInfo != null && !preEmittedGroups.contains(condInfo[0])) {
+            lines.add("   commit id: \"if: " + condInfo[1] + "\" type: REVERSE");
         }
 
         // 4. Process commit with output patterns as inline tags (issue 4 – no separate HIGHLIGHT).
@@ -287,6 +295,18 @@ public class MermaidRenderer {
 
         // Register this process in channelBranch for downstream cherry-pick detection.
         registerChannelBranch(procName, procLookup, channelBranch, currentBranch);
+    }
+
+    /** Overload without {@code preEmittedGroups} – treats all conditional nodes as inline. */
+    private void emitNodeWithChannels(List<String> lines,
+                                       String procName,
+                                       Map<String, NfProcess> procLookup,
+                                       Map<String, List<String>> predecessors,
+                                       Map<String, String> channelBranch,
+                                       String currentBranch,
+                                       Map<String, String[]> conditionalInfo) {
+        emitNodeWithChannels(lines, procName, procLookup, predecessors, channelBranch,
+                             currentBranch, conditionalInfo, Collections.emptySet());
     }
 
     // -------------------------------------------------------------------------
@@ -388,31 +408,45 @@ public class MermaidRenderer {
         // Emit file references from workflow main blocks before any process commits
         emitMainFileRefCommits(lines, pipeline);
 
-        // First segment always goes on main
-        emitFlatSegment(lines, segments.get(0), "main", procLookup, conditionalInfo);
+        Set<String> preEmittedGroups = new LinkedHashSet<>();
 
-        // Remaining segments each get their own branch named after their first process
+        // First segment always goes on main
+        emitFlatSegment(lines, segments.get(0), "main", procLookup, conditionalInfo, preEmittedGroups);
+
+        // Remaining segments each get their own branch named after their first process.
+        // For conditional segments, the "if:" REVERSE node is emitted on the current (main)
+        // branch BEFORE the branch declaration so the branch visually diverges from the if-node.
         for (int i = 1; i < segments.size(); i++) {
             List<String> seg = segments.get(i);
             String firstName = seg.get(0);
+
+            // If this segment is conditional, emit the if-node on the current branch first.
+            String[] ci = conditionalInfo.get(firstName);
+            if (ci != null && preEmittedGroups.add(ci[0])) {
+                lines.add("   commit id: \"if: " + ci[1] + "\" type: REVERSE");
+                // Mark all members of this group so emitFlatSegment skips their inline REVERSE.
+                for (String member : seg) preEmittedGroups.add(conditionalInfo.get(member)[0]);
+            }
+
             String bname = branchName(firstName, usedBranchNames);
             lines.add("   branch " + bname);
             lines.add("   checkout " + bname);
-            emitFlatSegment(lines, seg, bname, procLookup, conditionalInfo);
+            emitFlatSegment(lines, seg, bname, procLookup, conditionalInfo, preEmittedGroups);
             lines.add("   checkout main");
         }
     }
 
     private void emitFlatSegment(List<String> lines, List<String> names, String branchName,
                                   Map<String, NfProcess> procLookup,
-                                  Map<String, String[]> conditionalInfo) {
+                                  Map<String, String[]> conditionalInfo,
+                                  Set<String> preEmittedGroups) {
         for (String name : names) {
             // Input-file HIGHLIGHT (string-literal path patterns from the input: block)
             emitAggregatedInputHighlights(lines, name, procLookup);
-            // If-statement node – use condition text as commit ID (issue 2)
+            // If-statement node – skip if this group's if-node was emitted before the branch
             String[] ci = conditionalInfo.get(name);
-            if (ci != null) {
-                lines.add("   commit id: \"" + ci[1] + "\" type: REVERSE");
+            if (ci != null && !preEmittedGroups.contains(ci[0])) {
+                lines.add("   commit id: \"if: " + ci[1] + "\" type: REVERSE");
             }
             // Process commit with output tags inline (issue 4 – no separate HIGHLIGHT)
             String outputTags = buildOutputTagsSuffix(name, procLookup);
@@ -492,6 +526,9 @@ public class MermaidRenderer {
 
         Set<String> emitted = new LinkedHashSet<>();
         final String[] currentBranch = {"main"};
+        // Track conditional groups whose "if:" REVERSE commit has already been emitted
+        // on the parent branch, so subsequent branches from the same group don't repeat it.
+        Set<String> emittedConditionalGroups = new LinkedHashSet<>();
 
         // Emit file references from workflow main blocks before the first process commit
         emitMainFileRefCommits(lines, pipeline);
@@ -505,6 +542,21 @@ public class MermaidRenderer {
 
             for (String offNode : branchHang.getOrDefault(node, Collections.emptyList())) {
                 if (!hasUnemittedNodes(offNode, mainSet, successors, emitted)) continue;
+
+                // If the starting off-chain node is conditional, emit the "if:" REVERSE commit
+                // on the current (parent) branch BEFORE declaring the new branch.
+                // The same condition group's REVERSE is emitted at most once (for the first
+                // branch), so that multiple branches from one if-block share a single if-node.
+                Set<String> preEmittedGroups = new LinkedHashSet<>();
+                String[] condForOff = conditionalInfo.get(offNode);
+                if (condForOff != null) {
+                    String groupId = condForOff[0];
+                    if (emittedConditionalGroups.add(groupId)) {
+                        lines.add("   commit id: \"if: " + condForOff[1] + "\" type: REVERSE");
+                    }
+                    preEmittedGroups.add(groupId);
+                }
+
                 String bname = branchName(offNode, usedBranchNames);
                 lines.add("   branch " + bname);
                 lines.add("   checkout " + bname);
@@ -512,7 +564,7 @@ public class MermaidRenderer {
 
                 emitOffChainWithChannels(lines, offNode, mainSet, successors, predecessors,
                                           procLookup, channelBranch, currentBranch[0],
-                                          conditionalInfo, emitted);
+                                          conditionalInfo, emitted, preEmittedGroups);
 
                 String mergeTarget = findMergeTarget(offNode, successors, mainSet);
                 if (mergeTarget != null) {
@@ -550,13 +602,14 @@ public class MermaidRenderer {
                                            Map<String, String> channelBranch,
                                            String currentBranch,
                                            Map<String, String[]> conditionalInfo,
-                                           Set<String> emitted) {
+                                           Set<String> emitted,
+                                           Set<String> preEmittedGroups) {
         Set<String> visited = new LinkedHashSet<>();
         String cur = start;
         while (cur != null && visited.add(cur)) {
             if (!emitted.contains(cur)) {
                 emitNodeWithChannels(lines, cur, procLookup, predecessors, channelBranch,
-                                      currentBranch, conditionalInfo);
+                                      currentBranch, conditionalInfo, preEmittedGroups);
                 emitted.add(cur);
             }
             List<String> offSuccs = successors.getOrDefault(cur, Collections.emptyList()).stream()
