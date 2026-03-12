@@ -156,6 +156,34 @@ public class MermaidRenderer {
     }
 
     /**
+     * Emit a single aggregated HIGHLIGHT commit for the direct-filesystem input patterns
+     * of {@code procName} (i.e. string-literal {@code path("pattern")} entries in the
+     * process {@code input:} block).  Uses {@code "PROCNAME: input: *"} as the commit ID
+     * when there are multiple patterns, or {@code "PROCNAME: input: *.pattern"} for one.
+     * Does <em>not</em> register in {@code channelBranch} – input patterns are not
+     * referenced by downstream cherry-picks.
+     */
+    private void emitAggregatedInputHighlights(List<String> lines,
+                                                String procName,
+                                                Map<String, NfProcess> procLookup) {
+        NfProcess proc = procLookup.get(procName);
+        if (proc == null || proc.getInputs().isEmpty()) return;
+        List<String> inputs = proc.getInputs();
+        int n = inputs.size();
+        String cid = n == 1 ? procName + ": input: " + inputs.get(0) : procName + ": input: *";
+        StringBuilder sb = new StringBuilder("   commit id: \"").append(cid).append("\" type: HIGHLIGHT");
+        int tagsToShow = Math.min(n, 2);
+        for (int i = 0; i < tagsToShow; i++) {
+            sb.append(" tag: \"").append(inputs.get(i)).append("\"");
+        }
+        int remaining = n - tagsToShow;
+        if (remaining > 0) {
+            sb.append(" tag: \"+").append(remaining).append(" more\"");
+        }
+        lines.add(sb.toString());
+    }
+
+    /**
      * Emit a single aggregated HIGHLIGHT commit for the outputs of {@code procName}.
      * Up to 2 output patterns are shown as tags (full name, e.g. {@code *.yml});
      * any further outputs are summarised as a {@code +N more} tag on the third slot.
@@ -199,13 +227,19 @@ public class MermaidRenderer {
     }
 
     /**
-     * Emit a process commit (with preceding cherry-picks and following channel HIGHLIGHT
-     * commits).  If {@code processName} is a conditional call (recorded in
-     * {@code conditionalInfo}), a {@code type: REVERSE} commit is emitted first as an
-     * explicit "if-statement node" in the diagram.
-     *
-     * <p>The if-node ID is {@code "if: <processName>"} which is globally unique
-     * (process names are unique) so the same node is never emitted twice.
+     * Emit a process commit (with surrounding HIGHLIGHT and cherry-pick nodes).
+     * The full sequence per process is:
+     * <ol>
+     *   <li>Input-file HIGHLIGHT – string-literal {@code path("pattern")} entries from
+     *       the process {@code input:} block (omitted when the process has no such inputs).</li>
+     *   <li>Cherry-pick – aggregated reference to predecessor channels committed on a
+     *       different branch (omitted when all predecessors are on the same branch).</li>
+     *   <li>Optional {@code type: REVERSE} commit if the call is inside an {@code if}
+     *       block (the "if-statement node").</li>
+     *   <li>The process commit itself.</li>
+     *   <li>Output-file HIGHLIGHT – aggregated {@code path("pattern")} entries from the
+     *       process {@code output:} block.</li>
+     * </ol>
      */
     private void emitNodeWithChannels(List<String> lines,
                                        String procName,
@@ -214,7 +248,10 @@ public class MermaidRenderer {
                                        Map<String, String> channelBranch,
                                        String currentBranch,
                                        Map<String, String[]> conditionalInfo) {
-        // 1. Collect predecessor channels committed on a different branch, then emit a
+        // 1. Input-file HIGHLIGHT (files accessed directly from the filesystem)
+        emitAggregatedInputHighlights(lines, procName, procLookup);
+
+        // 2. Collect predecessor channels committed on a different branch, then emit a
         //    single aggregated cherry-pick to reduce visual clutter.  The second channel
         //    ID (if any) is shown as an explicit tag; further ones are summarised as
         //    "+N more" on a second tag slot.
@@ -239,16 +276,16 @@ public class MermaidRenderer {
             lines.add(sb.toString());
         }
 
-        // 2. If-statement node (for conditional calls) – one per process, always unique
+        // 3. If-statement node (for conditional calls) – one per process, always unique
         String[] condInfo = conditionalInfo.get(procName);
         if (condInfo != null) {
             lines.add("   commit id: \"if: " + procName + "\" type: REVERSE");
         }
 
-        // 3. Process commit
+        // 4. Process commit
         lines.add("   commit id: \"" + procName + "\"");
 
-        // 4. Output channel HIGHLIGHT commits (aggregated into one when there are multiple)
+        // 5. Output channel HIGHLIGHT commits (aggregated into one when there are multiple)
         emitAggregatedChannelHighlights(lines, procName, procLookup, channelBranch, currentBranch);
     }
 
@@ -370,6 +407,8 @@ public class MermaidRenderer {
                                   Map<String, NfProcess> procLookup,
                                   Map<String, String[]> conditionalInfo) {
         for (String name : names) {
+            // Input-file HIGHLIGHT (string-literal path patterns from the input: block)
+            emitAggregatedInputHighlights(lines, name, procLookup);
             // If-statement node for conditional calls – one per process, always unique
             if (conditionalInfo.containsKey(name)) {
                 lines.add("   commit id: \"if: " + name + "\" type: REVERSE");
