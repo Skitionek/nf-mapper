@@ -72,8 +72,8 @@ it easy to:
   patterns (e.g. `"*.bam"`, `"*.html"`)
 - Outputs valid [Mermaid `gitGraph`](https://mermaid.js.org/syntax/gitgraph.html)
   diagrams – paste directly into GitHub Markdown, Notion, Confluence, etc.
-- **Channel nodes**: each output path pattern rendered as a `HIGHLIGHT` commit
-  tagged with the file extension (e.g. `tag: "bam"`)
+- **Channel nodes**: each output path pattern inlined as a `tag:` on the process
+  commit (e.g. `commit id: "ALIGN" tag: "*.bam"`)
 - **Cherry-pick**: when a branch process consumes a channel committed on a
   different branch, a `cherry-pick` commit shows the data flow explicitly
 - **Workflow-call branches**: independent workflow calls in a flat pipeline are
@@ -81,7 +81,7 @@ it easy to:
 - **Multiple renderers**:
   - `default` (`gitGraph`) – branch/main-path focused
   - `conditional` (`gitGraph`) – condition-group branches for if/else-heavy workflows
-  - `metro` (`flowchart`) – station/line map style
+  - `metro` (`gitGraph LR`) – left-to-right metro-map style
 - Available as a **CLI tool** (fat JAR), a **Docker image** and a **GitHub Action**
 
 ---

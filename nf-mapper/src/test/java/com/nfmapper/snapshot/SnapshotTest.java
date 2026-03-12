@@ -77,8 +77,12 @@ class SnapshotTest {
     }
 
     private void writeSnapshot(String name, String diagram, String source) throws IOException {
+        writeSnapshot(name, snapshotRendererSuffix(), diagram, source);
+    }
+
+    private void writeSnapshot(String name, String suffix, String diagram, String source) throws IOException {
         Files.createDirectories(SNAPSHOTS_DIR);
-        Path out = SNAPSHOTS_DIR.resolve(name + "_" + snapshotRendererSuffix() + ".md");
+        Path out = SNAPSHOTS_DIR.resolve(name + "_" + suffix + ".md");
         StringBuilder sb = new StringBuilder();
         sb.append("# ").append(name).append("\n\n");
         if (source != null && !source.isEmpty()) {
@@ -182,7 +186,7 @@ class SnapshotTest {
         Assumptions.assumeTrue(runDedicatedRendererSnapshots());
         ParsedPipeline pipeline = PARSER.parseFile(fixture("if_workflow.nf"));
         String diagram = CONDITIONAL_RENDERER.render(pipeline, "If-Workflow (Conditional Renderer)", null);
-        writeSnapshot("if_workflow_conditional", diagram,
+        writeSnapshot("if_workflow_conditional", "conditional", diagram,
                 "nf-mapper/src/test/resources/fixtures/if_workflow.nf (renderer=conditional)");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("branch if_"),
@@ -194,7 +198,7 @@ class SnapshotTest {
         Assumptions.assumeTrue(runDedicatedRendererSnapshots());
         ParsedPipeline pipeline = PARSER.parseFile(fixture("complex_workflow.nf"));
         String diagram = METRO_RENDERER.render(pipeline, "RNA-seq Pipeline (Metro Renderer)", null);
-        writeSnapshot("complex_workflow_metro", diagram,
+        writeSnapshot("complex_workflow_metro", "metro", diagram,
                 "nf-mapper/src/test/resources/fixtures/complex_workflow.nf (renderer=metro)");
         assertTrue(diagram.contains("gitGraph LR:"), "Expected gitGraph syntax for metro renderer");
         assertFalse(diagram.contains("flowchart"), "Metro renderer should no longer emit flowchart syntax");
