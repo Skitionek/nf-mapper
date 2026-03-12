@@ -89,9 +89,9 @@ class SnapshotTest {
         writeSnapshot("simple_workflow", diagram, "nf-mapper/src/test/resources/fixtures/simple_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        // Multiple outputs are aggregated into a single HIGHLIGHT commit with "+1 more" tag
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"+1 more\""),
-            "Expected aggregated HIGHLIGHT commit for FASTQC:\n" + diagram);
+        // Two outputs: both shown as tags on a single HIGHLIGHT commit
+        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+            "Expected both FASTQC output patterns as tags:\n" + diagram);
         assertTrue(diagram.contains("commit id: \"MULTIQC\""));
     }
 
@@ -102,7 +102,7 @@ class SnapshotTest {
         writeSnapshot("complex_workflow", diagram, "nf-mapper/src/test/resources/fixtures/complex_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("branch"));
-        assertTrue(diagram.contains("commit id: \"STAR_ALIGN: *.bam\" type: HIGHLIGHT tag: \"bam\""));
+        assertTrue(diagram.contains("commit id: \"STAR_ALIGN: *.bam\" type: HIGHLIGHT tag: \"*.bam\""));
     }
 
     @Test
@@ -112,11 +112,9 @@ class SnapshotTest {
         writeSnapshot("nf_core_fastqc_module", diagram, "nf-mapper/src/test/resources/fixtures/nf_core_fastqc_module.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
-        // Multiple outputs are aggregated into a single HIGHLIGHT commit with "+1 more" tag
-        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"+1 more\""),
-            "Expected aggregated HIGHLIGHT for FASTQC:\n" + diagram);
-        assertFalse(diagram.contains("commit id: \"FASTQC: *.zip\" type: HIGHLIGHT"),
-            "Second output should be aggregated, not emitted separately:\n" + diagram);
+        // Two outputs (*.html, *.zip): both shown as tags; versions output is a 3rd → "+1 more"
+        assertTrue(diagram.contains("commit id: \"FASTQC: *.html\" type: HIGHLIGHT tag: \"*.html\" tag: \"*.zip\""),
+            "Expected FASTQC output patterns as tags:\n" + diagram);
     }
 
     @Test
@@ -167,7 +165,7 @@ class SnapshotTest {
                 List.of(new String[]{"TRIM", "ALIGN"}, new String[]{"ALIGN", "SORT"}));
         String diagram = RENDERER.render(pipeline, "Channel Nodes Example", null);
         writeSnapshot("scenario_channel_nodes", diagram, null);
-        assertTrue(diagram.contains("commit id: \"ALIGN: *.bam\" type: HIGHLIGHT tag: \"bam\""));
+        assertTrue(diagram.contains("commit id: \"ALIGN: *.bam\" type: HIGHLIGHT tag: \"*.bam\""));
     }
 
     @Test
@@ -269,8 +267,9 @@ class SnapshotTest {
         }
         assertEquals(1, cherryPickCount,
             "Multiple cherry-picks should be aggregated into one:\n" + diagram);
-        assertTrue(diagram.contains("tag: \"+1 more\""),
-            "Expected '+1 more' tag for aggregated cherry-picks:\n" + diagram);
+        // With 2 cherry-picks, the 2nd channel ID is shown as an explicit tag
+        assertTrue(diagram.contains("tag: \"SORT: *.sorted.bam\""),
+            "Expected 2nd channel shown as tag in aggregated cherry-pick:\n" + diagram);
     }
 
     @Test

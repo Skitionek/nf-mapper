@@ -8,14 +8,14 @@ title: Branch and Merge
 gitGraph LR:
    checkout main
    commit id: "ALIGN"
-   commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "bam"
+   commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "*.bam"
    branch SORT
    checkout SORT
    cherry-pick id: "ALIGN: *.bam"
    commit id: "SORT"
-   commit id: "SORT: *.sorted.bam" type: HIGHLIGHT tag: "bam"
+   commit id: "SORT: *.sorted.bam" type: HIGHLIGHT tag: "*.sorted.bam"
    checkout main
    commit id: "QC"
    merge SORT
-   commit id: "COUNT: *.counts.txt" type: HIGHLIGHT tag: "txt"
+   commit id: "COUNT: *.counts.txt" type: HIGHLIGHT tag: "*.counts.txt"
 ```

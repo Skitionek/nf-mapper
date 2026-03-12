@@ -8,13 +8,13 @@ title: Cherry-Pick Example
 gitGraph LR:
    checkout main
    commit id: "ALIGN"
-   commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "bam"
+   commit id: "ALIGN: *.bam" type: HIGHLIGHT tag: "*.bam"
    branch SORT
    checkout SORT
    cherry-pick id: "ALIGN: *.bam"
    commit id: "SORT"
-   commit id: "SORT: *.sorted.bam" type: HIGHLIGHT tag: "bam"
+   commit id: "SORT: *.sorted.bam" type: HIGHLIGHT tag: "*.sorted.bam"
    checkout main
    commit id: "QC"
-   commit id: "QC: *.qc.txt" type: HIGHLIGHT tag: "txt"
+   commit id: "QC: *.qc.txt" type: HIGHLIGHT tag: "*.qc.txt"
 ```

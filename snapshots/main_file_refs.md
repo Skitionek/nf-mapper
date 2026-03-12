@@ -12,10 +12,10 @@ gitGraph LR:
    commit id: "input: samplesheet.csv" type: HIGHLIGHT tag: "csv"
    commit id: "input: data/*_{1,2}.fastq.gz" type: HIGHLIGHT tag: "gz"
    commit id: "VALIDATE_INPUT"
-   commit id: "VALIDATE_INPUT: *.validated.csv" type: HIGHLIGHT tag: "csv"
+   commit id: "VALIDATE_INPUT: *.validated.csv" type: HIGHLIGHT tag: "*.validated.csv"
    branch FASTQC
    checkout FASTQC
    commit id: "FASTQC"
-   commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "+1 more"
+   commit id: "FASTQC: *.html" type: HIGHLIGHT tag: "*.html" tag: "*.zip"
    checkout main
 ```

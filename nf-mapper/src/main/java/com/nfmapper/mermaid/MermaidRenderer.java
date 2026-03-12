@@ -157,8 +157,8 @@ public class MermaidRenderer {
 
     /**
      * Emit a single aggregated HIGHLIGHT commit for the outputs of {@code procName}.
-     * When there are multiple outputs the first channel ID is used and a "+N more" tag
-     * summarises the remaining ones – mirroring the cherry-pick aggregation style.
+     * Up to 2 output patterns are shown as tags (full name, e.g. {@code *.yml});
+     * any further outputs are summarised as a {@code +N more} tag on the third slot.
      * All channel IDs are registered in {@code channelBranch} (when non-null) so that
      * downstream cherry-pick logic can still discover them.
      *
@@ -179,15 +179,22 @@ public class MermaidRenderer {
         if (channelBranch != null) {
             for (String[] cidExt : channels) channelBranch.put(cidExt[0], currentBranch);
         }
-        // Emit a single aggregated HIGHLIGHT commit for the first output
-        String[] first = channels.get(0);
-        String cid = first[0];
-        String ext = first[1];
-        int extras = channels.size() - 1;
-        String tagPart = extras > 0
-                ? " tag: \"+" + extras + " more\""
-                : (ext != null ? " tag: \"" + ext + "\"" : "");
-        lines.add("   commit id: \"" + cid + "\" type: HIGHLIGHT" + tagPart);
+        // Build the commit: first channel ID as the node ID; show up to 2 full output
+        // patterns as tags; any overflow becomes a "+N more" tag on the third slot.
+        String cid = channels.get(0)[0];
+        int n = channels.size();
+        StringBuilder sb = new StringBuilder("   commit id: \"").append(cid).append("\" type: HIGHLIGHT");
+        int tagsToShow = Math.min(n, 2);
+        for (int i = 0; i < tagsToShow; i++) {
+            // Extract the raw pattern from the channel ID ("PROC: *.pattern" → "*.pattern")
+            String pattern = channels.get(i)[0].substring(procName.length() + 2);
+            sb.append(" tag: \"").append(pattern).append("\"");
+        }
+        int remaining = n - tagsToShow;
+        if (remaining > 0) {
+            sb.append(" tag: \"+").append(remaining).append(" more\"");
+        }
+        lines.add(sb.toString());
     }
 
     /**
@@ -207,9 +214,9 @@ public class MermaidRenderer {
                                        String currentBranch,
                                        Map<String, String[]> conditionalInfo) {
         // 1. Collect predecessor channels committed on a different branch, then emit a
-        //    single aggregated cherry-pick to reduce visual clutter.  When more than one
-        //    channel needs to be cherry-picked the first ID is used and a "+N more" tag
-        //    summarises the remaining ones.
+        //    single aggregated cherry-pick to reduce visual clutter.  The second channel
+        //    ID (if any) is shown as an explicit tag; further ones are summarised as
+        //    "+N more" on a second tag slot.
         List<String> cherryPickIds = new ArrayList<>();
         for (String src : predecessors.getOrDefault(procName, Collections.emptyList())) {
             for (String[] cidExt : channelIdsWithExt(src, procLookup)) {
@@ -220,10 +227,15 @@ public class MermaidRenderer {
             }
         }
         if (!cherryPickIds.isEmpty()) {
-            String cid = cherryPickIds.get(0);
+            StringBuilder sb = new StringBuilder("   cherry-pick id: \"").append(cherryPickIds.get(0)).append("\"");
             int extras = cherryPickIds.size() - 1;
-            String tagPart = extras > 0 ? " tag: \"+" + extras + " more\"" : "";
-            lines.add("   cherry-pick id: \"" + cid + "\"" + tagPart);
+            if (extras >= 1) {
+                sb.append(" tag: \"").append(cherryPickIds.get(1)).append("\"");
+            }
+            if (extras > 1) {
+                sb.append(" tag: \"+").append(extras - 1).append(" more\"");
+            }
+            lines.add(sb.toString());
         }
 
         // 2. If-statement node (for conditional calls) – one per process, always unique
