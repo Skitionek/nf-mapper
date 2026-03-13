@@ -261,7 +261,8 @@ public class MermaidRenderer {
             Map<String, String> channelBranch,
             String currentBranch,
             Map<String, String[]> conditionalInfo,
-            Set<String> preEmittedGroups) {
+            Set<String> preEmittedGroups,
+            Set<String> committedIds) {
         // 1. Input-file HIGHLIGHT – suppress when all inputs are covered by predecessor
         // outputs.
         boolean suppressInput = false;
@@ -290,6 +291,15 @@ public class MermaidRenderer {
                 cherryPickProcs.add(src);
             }
         }
+        // Safety guard: drop any src whose commit id was not actually emitted. This
+        // protects against stale channelBranch entries that reference nodes which were
+        // never rendered as a standalone "commit id:" line (e.g. nodes that ended up
+        // only as merge targets and were therefore only added to 'emitted' without a
+        // corresponding commit line). Note: merged-branch entries are proactively
+        // removed from channelBranch after each merge, so this is a secondary defence.
+        if (committedIds != null) {
+            cherryPickProcs.removeIf(src -> !committedIds.contains(src));
+        }
         if (!cherryPickProcs.isEmpty()) {
             StringBuilder sb = new StringBuilder("   cherry-pick id: \"").append(cherryPickProcs.get(0)).append("\"");
             int extras = cherryPickProcs.size() - 1;
@@ -314,6 +324,11 @@ public class MermaidRenderer {
         // HIGHLIGHT).
         String outputTags = buildOutputTagsSuffix(procName, procLookup);
         lines.add("   commit id: \"" + procName + "\"" + outputTags);
+        // Record this as an actually-emitted commit so cherry-pick safety guards can
+        // verify the source commit exists.
+        if (committedIds != null) {
+            committedIds.add(procName);
+        }
 
         // Register this process in channelBranch for downstream cherry-pick detection.
         registerChannelBranch(procName, procLookup, channelBranch, currentBranch);
@@ -329,9 +344,25 @@ public class MermaidRenderer {
             Map<String, List<String>> predecessors,
             Map<String, String> channelBranch,
             String currentBranch,
+            Map<String, String[]> conditionalInfo,
+            Set<String> committedIds) {
+        emitNodeWithChannels(lines, procName, procLookup, predecessors, channelBranch,
+                currentBranch, conditionalInfo, Collections.emptySet(), committedIds);
+    }
+
+    /**
+     * Overload without {@code preEmittedGroups} or {@code committedIds}.
+     * Used by flat rendering where cherry-pick tracking is not needed.
+     */
+    private void emitNodeWithChannels(List<String> lines,
+            String procName,
+            Map<String, NfProcess> procLookup,
+            Map<String, List<String>> predecessors,
+            Map<String, String> channelBranch,
+            String currentBranch,
             Map<String, String[]> conditionalInfo) {
         emitNodeWithChannels(lines, procName, procLookup, predecessors, channelBranch,
-                currentBranch, conditionalInfo, Collections.emptySet());
+                currentBranch, conditionalInfo, Collections.emptySet(), null);
     }
 
     // -------------------------------------------------------------------------
@@ -573,6 +604,10 @@ public class MermaidRenderer {
         }
 
         Set<String> emitted = new LinkedHashSet<>();
+        // Tracks commit ids that were actually emitted as "commit id: X" lines (not
+        // just added via merge-target bookkeeping). Used to prevent cherry-picking
+        // commits that were never rendered.
+        Set<String> committedIds = new LinkedHashSet<>();
         final String[] currentBranch = { "main" };
         // Track conditional groups whose "if:" REVERSE commit has already been emitted
         // on the parent branch, so subsequent branches from the same group don't repeat
@@ -586,7 +621,7 @@ public class MermaidRenderer {
         for (String node : mainPath) {
             if (!emitted.contains(node)) {
                 emitNodeWithChannels(lines, node, procLookup, predecessors, channelBranch,
-                        currentBranch[0], conditionalInfo);
+                        currentBranch[0], conditionalInfo, committedIds);
                 emitted.add(node);
             }
 
@@ -615,7 +650,7 @@ public class MermaidRenderer {
 
                 emitOffChainWithChannels(lines, offNode, mainSet, successors, predecessors,
                         procLookup, channelBranch, currentBranch[0],
-                        conditionalInfo, emitted, preEmittedGroups);
+                        conditionalInfo, emitted, preEmittedGroups, committedIds);
 
                 String mergeTarget = findMergeTarget(offNode, successors, mainSet);
                 if (mergeTarget != null) {
@@ -628,12 +663,16 @@ public class MermaidRenderer {
                         if (!emitted.contains(step)) {
                             emitNodeWithChannels(lines, step, procLookup, predecessors,
                                     channelBranch, currentBranch[0],
-                                    conditionalInfo);
+                                    conditionalInfo, committedIds);
                             emitted.add(step);
                         }
                     }
                     lines.add("   merge " + bname);
                     emitted.add(mergeTarget);
+                    // After merging, remove this branch's nodes from channelBranch so
+                    // downstream off-chains don't emit cherry-picks referencing commits on
+                    // the now-gone branch (Mermaid errors on cherry-pick from merged branches).
+                    channelBranch.entrySet().removeIf(e -> e.getValue().equals(bname));
                 } else {
                     lines.add("   checkout main");
                     currentBranch[0] = "main";
@@ -652,13 +691,14 @@ public class MermaidRenderer {
             String currentBranch,
             Map<String, String[]> conditionalInfo,
             Set<String> emitted,
-            Set<String> preEmittedGroups) {
+            Set<String> preEmittedGroups,
+            Set<String> committedIds) {
         Set<String> visited = new LinkedHashSet<>();
         String cur = start;
         while (cur != null && visited.add(cur)) {
             if (!emitted.contains(cur)) {
                 emitNodeWithChannels(lines, cur, procLookup, predecessors, channelBranch,
-                        currentBranch, conditionalInfo, preEmittedGroups);
+                        currentBranch, conditionalInfo, preEmittedGroups, committedIds);
                 emitted.add(cur);
             }
             List<String> offSuccs = successors.getOrDefault(cur, Collections.emptyList()).stream()

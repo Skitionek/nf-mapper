@@ -201,6 +201,67 @@ class MermaidRendererTest {
                                 "Cherry-pick must not reference non-emitted merge-target commit D:\n" + result);
         }
 
+        /**
+         * When an off-branch is merged to main, the commits on that branch are
+         * absorbed into main. Any subsequent off-branch from main must NOT emit a
+         * cherry-pick referencing those merged-branch commits, because Mermaid gitGraph
+         * errors when cherry-picking from a branch that no longer exists.
+         *
+         * <p>
+         * Graph:
+         * <ul>
+         * <li>Main path: A → B → C → D → E
+         * <li>Off-chain from A (no main preds): DECOMPRESS → X → D (merges at D)
+         * <li>Also off-chains from D: TDF2MZML and THERMORAWFILEPARSER (each has
+         * DECOMPRESS as predecessor in connections)
+         * </ul>
+         * After "merge DECOMPRESS_BRANCH", the DECOMPRESS commit exists only as part of
+         * the merged history. TDF2MZML and THERMORAWFILEPARSER branches must not emit
+         * cherry-pick id: "DECOMPRESS" because Mermaid cannot locate that commit on
+         * the now-gone off-branch.
+         */
+        @Test
+        void testNoCherryPickFromMergedBranch() {
+                NfProcess a = new NfProcess("A");
+                NfProcess b = new NfProcess("B");
+                NfProcess c = new NfProcess("C");
+                NfProcess d = new NfProcess("D");
+                NfProcess e = new NfProcess("E");
+                NfProcess decompress = new NfProcess("DECOMPRESS", Collections.emptyList(),
+                                Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                                List.of("*.raw"));
+                NfProcess x = new NfProcess("X");
+                NfProcess tdf2mzml = new NfProcess("TDF2MZML");
+                NfProcess thermo = new NfProcess("THERMORAWFILEPARSER");
+
+                ParsedPipeline p = pipeline(
+                                List.of(a, b, c, d, e, decompress, x, tdf2mzml, thermo),
+                                List.of(
+                                                new String[] { "A", "B" },
+                                                new String[] { "B", "C" },
+                                                new String[] { "C", "D" },
+                                                new String[] { "D", "E" },
+                                                // DECOMPRESS off-chain merges back at D
+                                                new String[] { "DECOMPRESS", "X" },
+                                                new String[] { "X", "D" },
+                                                // TDF2MZML and THERMORAWFILEPARSER both depend on DECOMPRESS
+                                                new String[] { "DECOMPRESS", "TDF2MZML" },
+                                                new String[] { "DECOMPRESS", "THERMORAWFILEPARSER" },
+                                                new String[] { "TDF2MZML", "E" },
+                                                new String[] { "THERMORAWFILEPARSER", "E" }));
+
+                String result = RENDERER.render(p);
+
+                // DECOMPRESS must be committed somewhere (it is a real process)
+                assertTrue(result.contains("commit id: \"DECOMPRESS\""),
+                                "DECOMPRESS must appear as a committed node:\n" + result);
+
+                // After the DECOMPRESS branch is merged, TDF2MZML and THERMORAWFILEPARSER
+                // branches must not attempt to cherry-pick from the gone branch.
+                assertFalse(result.contains("cherry-pick id: \"DECOMPRESS\""),
+                                "Must not cherry-pick DECOMPRESS after its branch was merged:\n" + result);
+        }
+
         @Test
         void testConfigOverride() {
                 Map<String, Object> config = new LinkedHashMap<>();
