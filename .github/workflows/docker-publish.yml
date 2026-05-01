@@ -27,5 +27,6 @@ jobs:
         uses: ./.github/actions/docker-publish
         with:
           image: ghcr.io/${{ github.repository }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
           push: ${{ github.event_name != 'pull_request' }}
