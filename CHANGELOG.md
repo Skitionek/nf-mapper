@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **CI automation** – ported automation practices from the project template:
+  CodeQL Advanced security scanning (`codeql.yml`), MegaLinter linting with auto-fix PRs (`lint.yml`),
+  MegaLinter fix PR auto-approval (`megalinter-auto-approve.yml`), Dependabot configuration
+  (`dependabot.yml`) with GitHub Actions + Maven ecosystems, Dependabot auto-merge
+  (`dependabot-automerge.yml`), Copilot auto-fix on CI failure (`copilot-auto-fix.yml`),
+  `CODEOWNERS`, `FUNDING.yml`, `.cspell.json`, and a reusable Docker publish composite action.
+- **Conventional Commits** – added commit message and changelog conventions to Copilot instructions.
+
 ### Changed
 
 - **Java rewrite (breaking)** – nf-mapper is now implemented in Java
