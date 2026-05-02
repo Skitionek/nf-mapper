@@ -1,6 +1,9 @@
 {
   "version": "0.2",
   "words": [
+    "addgroup",
+    "adduser",
+    "antlr",
     "autobuild",
     "bigbio",
     "buildx",
@@ -27,6 +30,7 @@
     "SARIF",
     "skitionek",
     "Skitionek",
+    "sunlan",
     "temurin",
     "Temurin",
     "tfvars"

@@ -20,8 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **Dockerfile** – added non-root `nfmapper` user (`USER` instruction) to satisfy CKV_DOCKER_3 / DS002 security policies.
+- **Dockerfile** – added non-root `nfmapper` user (`USER` instruction) to satisfy CKV_DOCKER_3 / DS002 security policies; added `HEALTHCHECK NONE` to explicitly declare no health check (satisfies kics/trivy DS026).
 - **Workflow permissions** – added explicit top-level `permissions: {}` to `ci.yml` and `docker-publish.yml` to satisfy CKV2_GHA_1 (no implicit write-all default).
+- **ci.yml** – fixed `branches:` values from scalar to YAML array format to satisfy JSON Schema validation (v8r).
 - **Security** – pinned transitive dependency `org.pf4j:pf4j` to 3.14.1 to resolve CVE-2025-70952 (path traversal in `Unzip.java`).
 - **Lint** – added `.mega-linter.yml` with jscpd threshold of 10% to account for expected code overlap between `MermaidRenderer` and `ConditionalBranchMermaidRenderer`; expanded `.cspell.json` with project-specific words.
 
