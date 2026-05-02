@@ -1,4 +1,34 @@
 {
   "version": "0.2",
-  "words": ["ipynb", "marocchino", "pyx", "sarif", "SARIF", "tfvars"]
+  "words": [
+    "autobuild",
+    "bigbio",
+    "buildx",
+    "Buildx",
+    "CODEOWNERS",
+    "condas",
+    "Dskip",
+    "DskipTests",
+    "Dtest",
+    "expdesign",
+    "fileprep",
+    "hmarr",
+    "ipynb",
+    "marocchino",
+    "nextflow",
+    "Nextflow",
+    "nfmapper",
+    "picocli",
+    "prepass",
+    "pux",
+    "pyx",
+    "quantms",
+    "sarif",
+    "SARIF",
+    "skitionek",
+    "Skitionek",
+    "temurin",
+    "Temurin",
+    "tfvars"
+  ]
 }

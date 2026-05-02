@@ -21,4 +21,7 @@ WORKDIR /app
 
 COPY --from=builder /build/nf-mapper/target/nf-mapper-*.jar /app/nf-mapper.jar
 
+RUN addgroup -S nfmapper && adduser -S nfmapper -G nfmapper
+USER nfmapper
+
 ENTRYPOINT ["java", "-jar", "/app/nf-mapper.jar"]
