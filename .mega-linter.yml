@@ -4,3 +4,7 @@
 # Allow up to 10% code duplication (ConditionalBranchMermaidRenderer inherits
 # many rendering patterns from MermaidRenderer, leading to expected overlap).
 COPYPASTE_JSCPD_ARGUMENTS: "--threshold 10"
+
+# Spelling errors are informational only – they should never block a PR.
+DISABLE_ERRORS_LINTERS:
+  - SPELL_CSPELL
