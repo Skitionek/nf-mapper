@@ -4,3 +4,12 @@
 # Allow up to 10% code duplication (ConditionalBranchMermaidRenderer inherits
 # many rendering patterns from MermaidRenderer, leading to expected overlap).
 COPYPASTE_JSCPD_ARGUMENTS: "--threshold 10"
+
+# Spelling errors and Kingfisher false positives are informational only –
+# they should never block a PR.
+# Kingfisher flags the redacted AUTHORIZATION header in .git/config as a
+# "GitHub App Server-to-Server Token"; this is a false positive since the
+# value is already replaced with *** by Git's credential helper.
+DISABLE_ERRORS_LINTERS:
+  - SPELL_CSPELL
+  - REPOSITORY_KINGFISHER

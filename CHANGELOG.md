@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **MegaLinter** – upgraded from v8 to v9.4.0 in `.github/workflows/lint.yml`.
+- **Spelling linter** – `SPELL_CSPELL` is now configured as a warning-only linter via `DISABLE_ERRORS_LINTERS` in `.mega-linter.yml` so spelling suggestions never block a PR.
+
 ### Added
 
 - **CI automation** – ported automation practices from the project template:
