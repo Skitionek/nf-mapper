@@ -13,3 +13,13 @@ COPYPASTE_JSCPD_ARGUMENTS: "--threshold 10"
 DISABLE_ERRORS_LINTERS:
   - SPELL_CSPELL
   - REPOSITORY_KINGFISHER
+
+# Use a project-specific Checkstyle config that enforces real bug-catching
+# rules while allowing the existing code conventions (long lines, no Javadoc).
+JAVA_CHECKSTYLE_CONFIG_FILE: checkstyle.xml
+
+# Nextflow (.nf) files use a DSL2 superset of Groovy that is not valid plain
+# Groovy. Exclude them from Groovy linting to avoid false positives such as
+# "duplicate variable declaration" across script:/stub: blocks and
+# "unreachable code" after Nextflow labeled-branch return statements.
+GROOVY_NPM_GROOVY_LINT_FILTER_REGEX_EXCLUDE: ".*\\.nf$"

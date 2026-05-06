@@ -16,7 +16,7 @@ class MermaidRendererTest {
                 return new MermaidRenderer();
         }
 
-        private final MermaidRenderer RENDERER = renderer();
+        private final MermaidRenderer renderer = renderer();
 
         protected boolean expectConditionalBranchNameInDagConditionalTest() {
                 return false;
@@ -36,12 +36,12 @@ class MermaidRendererTest {
 
         @Test
         void testReturnsString() {
-                assertInstanceOf(String.class, RENDERER.render(pipeline()));
+                assertInstanceOf(String.class, renderer.render(pipeline()));
         }
 
         @Test
         void testStartsWithInitThenGitGraph() {
-                String result = RENDERER.render(pipeline());
+                String result = renderer.render(pipeline());
                 String[] lines = result.split("\n");
                 // Init line: starts with %%{init: ...
                 assertTrue(lines[0].startsWith("%%{init: "), "Expected init line, got: " + lines[0]);
@@ -57,7 +57,7 @@ class MermaidRendererTest {
 
         @Test
         void testTitleAddsFrontMatter() {
-                String result = RENDERER.render(pipeline(), "My Pipeline", null);
+                String result = renderer.render(pipeline(), "My Pipeline", null);
                 String[] lines = result.split("\n");
                 assertEquals("---", lines[0]);
                 assertEquals("title: My Pipeline", lines[1]);
@@ -69,13 +69,13 @@ class MermaidRendererTest {
 
         @Test
         void testNoTitleNoFrontMatter() {
-                String result = RENDERER.render(pipeline());
+                String result = renderer.render(pipeline());
                 assertFalse(result.contains("---"));
         }
 
         @Test
         void testSingleProcessOnMain() {
-                String result = RENDERER.render(pipeline(new NfProcess("FASTQC")));
+                String result = renderer.render(pipeline(new NfProcess("FASTQC")));
                 assertTrue(result.contains("   commit id: \"FASTQC\""));
                 assertFalse(result.contains("branch"));
         }
@@ -89,7 +89,7 @@ class MermaidRendererTest {
                                 List.of(new NfWorkflow(null, List.of("A", "B"))),
                                 Collections.emptyList(),
                                 Collections.emptyList());
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 if (expectFlatWorkflowBranches()) {
                         assertTrue(result.contains("branch B"), "Expected branch named 'B', got:\n" + result);
                 } else {
@@ -102,7 +102,7 @@ class MermaidRendererTest {
                 NfProcess proc = new NfProcess("ALIGN", Collections.emptyList(), Collections.emptyList(),
                                 Collections.emptyList(), Collections.emptyList(),
                                 List.of("*.bam"));
-                String result = RENDERER.render(pipeline(proc));
+                String result = renderer.render(pipeline(proc));
                 // Issue 4: output tag is inline on the process commit – no separate HIGHLIGHT
                 // commit.
                 assertTrue(result.contains("commit id: \"ALIGN\" tag: \"*.bam\""),
@@ -131,7 +131,7 @@ class MermaidRendererTest {
                                                 new String[] { "ALIGN", "SORT" }, new String[] { "SORT", "QC" },
                                                 new String[] { "QC", "REPORT" },
                                                 new String[] { "ALIGN", "MERGE" }, new String[] { "SORT", "MERGE" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 int cherryPickCount = 0;
                 for (String line : result.split("\n")) {
                         if (line.trim().startsWith("cherry-pick"))
@@ -157,7 +157,7 @@ class MermaidRendererTest {
                                 Collections.emptyList(), Collections.emptyList(), List.of("*.qc.txt"));
                 ParsedPipeline p = pipeline(List.of(align, sort, qc),
                                 List.of(new String[] { "ALIGN", "QC" }, new String[] { "ALIGN", "SORT" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 // Issue 3: cherry-pick references the process name, not a channel ID
                 assertTrue(result.contains("cherry-pick id: \"ALIGN\""),
                                 "Expected cherry-pick referencing process name in:\n" + result);
@@ -196,7 +196,7 @@ class MermaidRendererTest {
                                                 new String[] { "X", "D" },
                                                 new String[] { "D", "G" }));
 
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertFalse(result.contains("cherry-pick id: \"D\""),
                                 "Cherry-pick must not reference non-emitted merge-target commit D:\n" + result);
         }
@@ -250,7 +250,7 @@ class MermaidRendererTest {
                                                 new String[] { "TDF2MZML", "E" },
                                                 new String[] { "THERMORAWFILEPARSER", "E" }));
 
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
 
                 // DECOMPRESS must be committed somewhere (it is a real process)
                 assertTrue(result.contains("commit id: \"DECOMPRESS\""),
@@ -266,7 +266,7 @@ class MermaidRendererTest {
         void testConfigOverride() {
                 Map<String, Object> config = new LinkedHashMap<>();
                 config.put("showBranches", false); // override the default (true) to false
-                String result = RENDERER.render(pipeline(), null, config);
+                String result = renderer.render(pipeline(), null, config);
                 assertTrue(result.contains("'showBranches': false"), "Expected showBranches:false after override");
                 assertTrue(result.contains("'parallelCommits': false"),
                                 "Default parallelCommits:false should be preserved");
@@ -276,7 +276,7 @@ class MermaidRendererTest {
         void testNoFlowchartKeyword() {
                 ParsedPipeline p = pipeline(List.of(new NfProcess("A"), new NfProcess("B")),
                                 List.<String[]>of(new String[] { "A", "B" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertFalse(result.contains("flowchart"));
                 assertFalse(result.contains("-->"));
         }
@@ -286,7 +286,7 @@ class MermaidRendererTest {
                 NfProcess proc = new NfProcess("FASTQC", Collections.emptyList(), Collections.emptyList(),
                                 Collections.emptyList(), Collections.emptyList(),
                                 List.of("*.html", "*.zip"));
-                String result = RENDERER.render(pipeline(proc));
+                String result = renderer.render(pipeline(proc));
                 // Issue 4: output tags inline on the process commit – no separate HIGHLIGHT
                 // commit.
                 assertTrue(result.contains("commit id: \"FASTQC\" tag: \"*.html\" tag: \"*.zip\""),
@@ -303,7 +303,7 @@ class MermaidRendererTest {
                                 List.of(new NfWorkflow(null, List.of("FASTQC", "TRIMGALORE"))),
                                 Collections.emptyList(),
                                 Collections.emptyList());
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 if (expectFlatWorkflowBranches()) {
                         assertTrue(result.contains("branch TRIMGALORE"),
                                         "Expected branch named TRIMGALORE, got:\n" + result);
@@ -324,7 +324,7 @@ class MermaidRendererTest {
                 ParsedPipeline p = pipeline(
                                 List.of(align, sort, qc),
                                 List.of(new String[] { "ALIGN", "QC" }, new String[] { "ALIGN", "SORT" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertTrue(result.contains("branch SORT"),
                                 "Expected branch named SORT, got:\n" + result);
         }
@@ -340,7 +340,7 @@ class MermaidRendererTest {
                                 Collections.emptyList(),
                                 Collections.emptyList(),
                                 conditionalInfo);
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertTrue(result.contains("type: REVERSE"),
                                 "Expected if-node with type REVERSE for conditional process:\n" + result);
                 // The if-node should appear before the process commit
@@ -362,7 +362,7 @@ class MermaidRendererTest {
                                 Collections.emptyList(),
                                 Collections.emptyList(),
                                 conditionalInfo);
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertTrue(result.contains("commit id: \"if: params.run_qc\" type: REVERSE"),
                                 "Expected 'if: conditionText' as REVERSE node id:\n" + result);
                 assertFalse(result.contains("commit id: \"if: QC\""),
@@ -385,7 +385,7 @@ class MermaidRendererTest {
                                 Collections.emptyList(),
                                 List.<String[]>of(new String[] { "ALIGN", "QC" }, new String[] { "ALIGN", "COUNT" }),
                                 conditionalInfo);
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 // "if:" REVERSE should appear before the "branch QC" declaration
                 int ifIdx = result.indexOf("commit id: \"if: params.run_qc\" type: REVERSE");
                 String expectedBranch = expectConditionalBranchNameInDagConditionalTest() ? "branch if_params_run_qc"
@@ -401,7 +401,7 @@ class MermaidRendererTest {
 
         @Test
         void testNfCoreThemePresent() {
-                String result = RENDERER.render(pipeline());
+                String result = renderer.render(pipeline());
                 assertTrue(result.contains("'theme': 'base'"), "Should have base theme");
                 assertTrue(result.contains("'git0': '#24B064'"), "Should have nf-core green as git0");
                 assertTrue(result.contains("'git1': '#FA7F19'"), "Should have orange as git1");
@@ -416,7 +416,7 @@ class MermaidRendererTest {
                                 List.of(new NfWorkflow(null, List.of("FASTQC"), List.of("*.fastq.gz"))),
                                 Collections.emptyList(),
                                 Collections.emptyList());
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertTrue(result.contains("commit id: \"input: *.fastq.gz\" type: HIGHLIGHT"),
                                 "Expected HIGHLIGHT commit for main-block file ref:\n" + result);
                 // File ref should appear before the process commit
@@ -433,7 +433,7 @@ class MermaidRendererTest {
                                 List.of(new NfWorkflow(null, List.of("PROC"), List.of("data/*.bam"))),
                                 Collections.emptyList(),
                                 Collections.emptyList());
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertTrue(result.contains("tag: \"bam\""),
                                 "Expected tag:bam for *.bam file ref:\n" + result);
         }
@@ -448,7 +448,7 @@ class MermaidRendererTest {
                                 List.of(new NfWorkflow(null, List.of("ALIGN", "SORT"), List.of("*.fastq.gz"))),
                                 Collections.emptyList(),
                                 List.<String[]>of(new String[] { "ALIGN", "SORT" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertTrue(result.contains("commit id: \"input: *.fastq.gz\" type: HIGHLIGHT"),
                                 "Expected HIGHLIGHT commit in DAG rendering:\n" + result);
                 int refIdx = result.indexOf("input: *.fastq.gz");
@@ -465,7 +465,7 @@ class MermaidRendererTest {
                                                 List.of("samplesheet.csv", "*.fastq.gz"))),
                                 Collections.emptyList(),
                                 Collections.emptyList());
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertTrue(result.contains("input: samplesheet.csv"),
                                 "Expected samplesheet.csv file ref:\n" + result);
                 assertTrue(result.contains("input: *.fastq.gz"),
@@ -489,7 +489,7 @@ class MermaidRendererTest {
                 // Must complete without hanging or throwing
                 String result = assertTimeoutPreemptively(
                                 java.time.Duration.ofSeconds(5),
-                                () -> RENDERER.render(p),
+                                () -> renderer.render(p),
                                 "render() hung on a self-loop connection");
                 assertTrue(result.contains("commit id: \"A\""),
                                 "Process A should still appear in output:\n" + result);
@@ -505,7 +505,7 @@ class MermaidRendererTest {
                                 List.<String[]>of(new String[] { "A", "B" }, new String[] { "B", "A" }));
                 String result = assertTimeoutPreemptively(
                                 java.time.Duration.ofSeconds(5),
-                                () -> RENDERER.render(p),
+                                () -> renderer.render(p),
                                 "render() hung on a two-node cycle");
                 assertTrue(result.contains("commit id: \"A\"") || result.contains("commit id: \"B\""),
                                 "At least one process should appear in output:\n" + result);
@@ -528,7 +528,7 @@ class MermaidRendererTest {
                                                 new String[] { "A", "B" }, new String[] { "B", "A" }));
                 String result = assertTimeoutPreemptively(
                                 java.time.Duration.ofSeconds(5),
-                                () -> RENDERER.render(p),
+                                () -> renderer.render(p),
                                 "render() hung on an off-chain cycle");
                 assertTrue(result.contains("commit id: \"X\""),
                                 "Process X should appear in output:\n" + result);
@@ -570,7 +570,7 @@ class MermaidRendererTest {
                                                 new String[] { "BRANCH_A", "SHARED" },
                                                 new String[] { "BRANCH_B", "SHARED" },
                                                 new String[] { "SHARED", "TAIL" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 // SHARED and TAIL must each appear exactly once in the output
                 long sharedCount = Arrays.stream(result.split("\n"))
                                 .filter(l -> l.contains("commit id: \"SHARED\"")).count();
@@ -597,7 +597,7 @@ class MermaidRendererTest {
                                 Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
                                 List.of("*.fastq.gz"), // inputs
                                 List.of("*.bam")); // outputs
-                String result = RENDERER.render(pipeline(proc));
+                String result = renderer.render(pipeline(proc));
                 // Input HIGHLIGHT commit should appear before the process commit
                 assertTrue(result.contains(
                                 "commit id: \"ALIGN: input: *.fastq.gz\" type: HIGHLIGHT tag: \"*.fastq.gz\""),
@@ -619,7 +619,7 @@ class MermaidRendererTest {
                                 Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
                                 List.of("*.fastq.gz", "reference.fa", "annotation.gtf"), // 3 inputs
                                 Collections.emptyList());
-                String result = RENDERER.render(pipeline(proc));
+                String result = renderer.render(pipeline(proc));
                 // Commit ID uses wildcard when there are multiple inputs
                 assertTrue(result.contains("commit id: \"PROC: input: *\" type: HIGHLIGHT"),
                                 "Expected wildcard commit ID for multiple inputs:\n" + result);
@@ -643,7 +643,7 @@ class MermaidRendererTest {
                                 Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
                                 Collections.emptyList(), // no string-literal input patterns
                                 List.of("*.html", "*.zip"));
-                String result = RENDERER.render(pipeline(proc));
+                String result = renderer.render(pipeline(proc));
                 assertFalse(result.contains("input:"),
                                 "Should not emit input HIGHLIGHT when process has no string-literal input patterns:\n"
                                                 + result);
@@ -674,7 +674,7 @@ class MermaidRendererTest {
                 ParsedPipeline p = pipeline(
                                 List.of(align, sort, qc),
                                 List.of(new String[] { "ALIGN", "QC" }, new String[] { "ALIGN", "SORT" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 // Input HIGHLIGHT for SORT suppressed (*.bam covered by ALIGN's outputs – issue
                 // 1)
                 assertFalse(result.contains("SORT: input:"),
@@ -709,7 +709,7 @@ class MermaidRendererTest {
                 ParsedPipeline p = pipeline(
                                 List.of(a, b),
                                 List.<String[]>of(new String[] { "TRIM", "ALIGN" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 // Input HIGHLIGHT for ALIGN suppressed (*.trimmed.fastq.gz covered by TRIM's
                 // outputs)
                 assertFalse(result.contains("ALIGN: input:"),
@@ -744,7 +744,7 @@ class MermaidRendererTest {
                 ParsedPipeline p = pipeline(
                                 List.of(align, annotate),
                                 List.<String[]>of(new String[] { "ALIGN", "ANNOTATE" }));
-                String result = RENDERER.render(p);
+                String result = renderer.render(p);
                 assertTrue(result.contains("ANNOTATE: input: reference.fa"),
                                 "Input HIGHLIGHT should be kept when inputs differ from predecessor outputs:\n"
                                                 + result);
@@ -760,7 +760,7 @@ class MermaidRendererTest {
                                 Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
                                 Collections.emptyList(),
                                 List.of("report.html", "report.zip", "versions.yml"));
-                String result = RENDERER.render(pipeline(proc));
+                String result = renderer.render(pipeline(proc));
                 // Issue 4: inline tags on process commit
                 assertTrue(result.contains(
                                 "commit id: \"MULTIQC\" tag: \"report.html\" tag: \"report.zip\" tag: \"+1 more\""),
