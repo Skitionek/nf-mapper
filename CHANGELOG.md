@@ -25,6 +25,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **MegaLinter – JAVA_PMD**: renamed non-static `final` field `RENDERER` to `renderer` in `MermaidRendererTest` and `SnapshotTest` to satisfy the PMD `FieldNamingConventions` rule (non-static final fields must be camelCase).
+- **MegaLinter – JAVA_CHECKSTYLE**: replaced the default `sun_checks.xml` config (1 403 style errors) with a project-specific `checkstyle.xml` that enforces real bug-catching rules while allowing the existing code conventions (long lines, no mandatory Javadoc, wildcard imports).
+- **MegaLinter – GROOVY_NPM_GROOVY_LINT**: excluded `*.nf` files from Groovy linting via `GROOVY_NPM_GROOVY_LINT_FILTER_REGEX_EXCLUDE`; Nextflow DSL2 files use a Groovy superset that causes false-positive errors (duplicate `def` across `script:`/`stub:` blocks, unreachable-code after labeled-branch `return` statements).
 - **Dockerfile** – added non-root `nfmapper` user (`USER` instruction) to satisfy CKV_DOCKER_3 / DS002 security policies; added `HEALTHCHECK NONE` to explicitly declare no health check (satisfies kics/trivy DS026).
 - **Workflow permissions** – added explicit top-level `permissions: {}` to `ci.yml` and `docker-publish.yml` to satisfy CKV2_GHA_1 (no implicit write-all default).
 - **ci.yml** – fixed `branches:` values from scalar to YAML array format to satisfy JSON Schema validation (v8r).

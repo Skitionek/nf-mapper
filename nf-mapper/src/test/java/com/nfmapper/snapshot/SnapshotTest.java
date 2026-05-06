@@ -54,7 +54,7 @@ class SnapshotTest {
         return "default".equals(snapshotRendererSuffix());
     }
 
-    private final MermaidRenderer RENDERER = renderer();
+    private final MermaidRenderer renderer = renderer();
 
     /** Resolves to the {@code snapshots/} directory at the repo root. */
     private static final Path SNAPSHOTS_DIR;
@@ -109,7 +109,7 @@ class SnapshotTest {
     @Test
     void testSnapshotMinimalProcess() throws IOException {
         ParsedPipeline pipeline = PARSER.parseFile(fixture("minimal_process.nf"));
-        String diagram = RENDERER.render(pipeline, "Minimal Process", null);
+        String diagram = renderer.render(pipeline, "Minimal Process", null);
         writeSnapshot("minimal_process", diagram, "nf-mapper/src/test/resources/fixtures/minimal_process.nf");
         assertTrue(diagram.contains("gitGraph"), "should contain gitGraph");
         assertTrue(diagram.contains("commit id: \"HELLO\""), "should contain HELLO process");
@@ -118,7 +118,7 @@ class SnapshotTest {
     @Test
     void testSnapshotSimpleWorkflow() throws IOException {
         ParsedPipeline pipeline = PARSER.parseFile(fixture("simple_workflow.nf"));
-        String diagram = RENDERER.render(pipeline, "nf-core/rnaseq QC", null);
+        String diagram = renderer.render(pipeline, "nf-core/rnaseq QC", null);
         writeSnapshot("simple_workflow", diagram, "nf-mapper/src/test/resources/fixtures/simple_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("commit id: \"FASTQC\""));
@@ -131,7 +131,7 @@ class SnapshotTest {
     @Test
     void testSnapshotComplexWorkflow() throws IOException {
         ParsedPipeline pipeline = PARSER.parseFile(fixture("complex_workflow.nf"));
-        String diagram = RENDERER.render(pipeline, "RNA-seq Pipeline", null);
+        String diagram = renderer.render(pipeline, "RNA-seq Pipeline", null);
         writeSnapshot("complex_workflow", diagram, "nf-mapper/src/test/resources/fixtures/complex_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("branch"));
@@ -142,7 +142,7 @@ class SnapshotTest {
     @Test
     void testSnapshotNfCoreFastqcModule() throws IOException {
         ParsedPipeline pipeline = PARSER.parseFile(fixture("nf_core_fastqc_module.nf"));
-        String diagram = RENDERER.render(pipeline, "nf-core FASTQC module", null);
+        String diagram = renderer.render(pipeline, "nf-core FASTQC module", null);
         writeSnapshot("nf_core_fastqc_module", diagram,
                 "nf-mapper/src/test/resources/fixtures/nf_core_fastqc_module.nf");
         assertTrue(diagram.contains("gitGraph"));
@@ -155,7 +155,7 @@ class SnapshotTest {
     @Test
     void testSnapshotNfCoreFetchngsSra() throws IOException {
         ParsedPipeline pipeline = PARSER.parseFile(fixture("nf_core_fetchngs_sra.nf"));
-        String diagram = RENDERER.render(pipeline, "nf-core/fetchngs SRA", null);
+        String diagram = renderer.render(pipeline, "nf-core/fetchngs SRA", null);
         writeSnapshot("nf_core_fetchngs_sra", diagram, "nf-mapper/src/test/resources/fixtures/nf_core_fetchngs_sra.nf");
         assertTrue(diagram.contains("gitGraph"));
         assertTrue(diagram.contains("branch"));
@@ -168,7 +168,7 @@ class SnapshotTest {
     @Test
     void testSnapshotIfWorkflow() throws IOException {
         ParsedPipeline pipeline = PARSER.parseFile(fixture("if_workflow.nf"));
-        String diagram = RENDERER.render(pipeline, "If-Statement Workflow", null);
+        String diagram = renderer.render(pipeline, "If-Statement Workflow", null);
         writeSnapshot("if_workflow", diagram, "nf-mapper/src/test/resources/fixtures/if_workflow.nf");
         assertTrue(diagram.contains("gitGraph"));
         // QC is inside an if block – should produce an if-node
@@ -210,7 +210,7 @@ class SnapshotTest {
                                 List.of("*.sorted.bam"))),
                 null,
                 List.of(new String[] { "TRIM", "ALIGN" }, new String[] { "ALIGN", "SORT" }));
-        String diagram = RENDERER.render(pipeline, "Channel Nodes Example", null);
+        String diagram = renderer.render(pipeline, "Channel Nodes Example", null);
         writeSnapshot("scenario_channel_nodes", diagram, null);
         // Issue 4: output tags are inline on the process commit, no separate HIGHLIGHT.
         assertTrue(diagram.contains("commit id: \"ALIGN\" tag: \"*.bam\""));
@@ -231,7 +231,7 @@ class SnapshotTest {
                                 List.of("*.qc.txt"))),
                 null,
                 List.of(new String[] { "ALIGN", "SORT" }, new String[] { "ALIGN", "QC" }));
-        String diagram = RENDERER.render(pipeline, "Cherry-Pick Example", null);
+        String diagram = renderer.render(pipeline, "Cherry-Pick Example", null);
         writeSnapshot("scenario_cherry_pick", diagram, null);
         // Issue 3: cherry-pick references process name, not channel ID.
         assertTrue(diagram.contains("cherry-pick id: \"ALIGN\""));
@@ -252,7 +252,7 @@ class SnapshotTest {
                                 List.of("multiqc_report.html"))),
                 List.of(new NfWorkflow("QC_WF", List.of("FASTQC", "TRIMGALORE", "MULTIQC"))),
                 null);
-        String diagram = RENDERER.render(pipeline, "Workflow Call Branches", null);
+        String diagram = renderer.render(pipeline, "Workflow Call Branches", null);
         writeSnapshot("scenario_workflow_call_branches", diagram, null);
         if (expectWorkflowCallBranchesInSnapshot()) {
             assertTrue(diagram.contains("branch"));
@@ -281,7 +281,7 @@ class SnapshotTest {
                 List.of(
                         new String[] { "ALIGN", "QC" }, new String[] { "ALIGN", "SORT" },
                         new String[] { "QC", "COUNT" }, new String[] { "SORT", "COUNT" }));
-        String diagram = RENDERER.render(pipeline, "Branch and Merge", null);
+        String diagram = renderer.render(pipeline, "Branch and Merge", null);
         writeSnapshot("scenario_merge", diagram, null);
         assertTrue(diagram.contains("merge "));
         assertTrue(diagram.contains("branch "));
@@ -311,7 +311,7 @@ class SnapshotTest {
                         new String[] { "ALIGN", "SORT" }, new String[] { "SORT", "QC" },
                         new String[] { "QC", "REPORT" },
                         new String[] { "ALIGN", "MERGE" }, new String[] { "SORT", "MERGE" }));
-        String diagram = RENDERER.render(pipeline, "Multi Cherry-Pick Example", null);
+        String diagram = renderer.render(pipeline, "Multi Cherry-Pick Example", null);
         writeSnapshot("scenario_multi_cherry_pick", diagram, null);
         assertTrue(diagram.contains("cherry-pick"), "Expected cherry-pick in diagram:\n" + diagram);
         // Aggregated into a single cherry-pick
@@ -330,7 +330,7 @@ class SnapshotTest {
     @Test
     void testSnapshotMainFileRefs() throws IOException {
         ParsedPipeline pipeline = PARSER.parseFile(fixture("main_file_refs.nf"));
-        String diagram = RENDERER.render(pipeline, "Main Block File Refs", null);
+        String diagram = renderer.render(pipeline, "Main Block File Refs", null);
         writeSnapshot("main_file_refs", diagram, "nf-mapper/src/test/resources/fixtures/main_file_refs.nf");
         assertTrue(diagram.contains("gitGraph"));
         // File references from the main block should appear as HIGHLIGHT commits
@@ -354,7 +354,7 @@ class SnapshotTest {
         // full process chain: INPUT_CHECK -> ... -> SUMMARY_PIPELINE ->
         // PIPELINE_COMPLETION
         ParsedPipeline pipeline = PARSER.parseFile(fixture("quantms_style/main.nf"));
-        String diagram = RENDERER.render(pipeline, "quantms-style pipeline", null);
+        String diagram = renderer.render(pipeline, "quantms-style pipeline", null);
         writeSnapshot("quantms_style", diagram,
                 "nf-mapper/src/test/resources/fixtures/quantms_style/main.nf");
         assertTrue(diagram.contains("gitGraph"), "should contain gitGraph");

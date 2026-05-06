@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+  Project-specific Checkstyle configuration.
+  Focuses on catching real bugs and serious code-quality issues while allowing
+  the existing code conventions (long lines, no mandatory Javadoc, etc.).
+-->
+<module name="Checker">
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- Disallow tab characters; use spaces. -->
+    <module name="FileTabCharacter"/>
+
+    <module name="TreeWalker">
+
+        <!-- ── Imports ─────────────────────────────────────────────────── -->
+        <!-- Disallow duplicate imports -->
+        <module name="RedundantImport"/>
+        <!-- Disallow unused imports -->
+        <module name="UnusedImports"/>
+
+        <!-- ── Blocks ──────────────────────────────────────────────────── -->
+        <!-- Disallow completely empty blocks (a comment inside is OK) -->
+        <module name="EmptyBlock">
+            <property name="option" value="text"/>
+        </module>
+        <!-- Catch blocks that swallow exceptions silently are bugs -->
+        <module name="EmptyCatchBlock">
+            <property name="exceptionVariableName" value="expected|ignore.*"/>
+        </module>
+
+        <!-- ── Code problems ───────────────────────────────────────────── -->
+        <!-- Detect string equality misuse (== instead of .equals) -->
+        <module name="StringLiteralEquality"/>
+        <!-- Fall-through in switch without a comment is almost always a bug -->
+        <module name="FallThrough"/>
+        <!-- Redundant boolean returns / expressions -->
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+
+    </module>
+</module>
