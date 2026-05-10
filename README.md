@@ -377,7 +377,7 @@ gitGraph LR:
    commit id: "softwareVersionsToYAML"
    checkout main
    commit id: "SRA_RUNINFO_TO_FTP"
-   commit id: "if: params.skip_fastq_download" type: REVERSE
+   commit id: "if: !(params.skip_fastq_download)" type: REVERSE
    branch ASPERA_CLI
    checkout ASPERA_CLI
    commit id: "ASPERA_CLI"
