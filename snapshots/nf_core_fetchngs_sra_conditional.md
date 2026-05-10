@@ -15,9 +15,9 @@ gitGraph LR:
    commit id: "softwareVersionsToYAML"
    checkout main
    commit id: "SRA_RUNINFO_TO_FTP"
-   commit id: "if: params.skip_fastq_download" type: REVERSE
-   branch if_params_skip_fastq_download
-   checkout if_params_skip_fastq_download
+   commit id: "if: !(params.skip_fastq_download)" type: REVERSE
+   branch if___params_skip_fastq_download_
+   checkout if___params_skip_fastq_download_
    commit id: "ASPERA_CLI"
    checkout main
    branch FASTQ_DOWNLOAD_PREFETCH_FASTERQDUMP_SRATOOLS
