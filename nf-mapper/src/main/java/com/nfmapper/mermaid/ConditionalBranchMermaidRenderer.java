@@ -43,6 +43,8 @@ public class ConditionalBranchMermaidRenderer extends MermaidRenderer {
             lines.add("---");
         }
 
+        lines.add(GENERATED_COMMENT);
+
         Map<String, Object> mergedGitGraph = new LinkedHashMap<>(DEFAULT_GITGRAPH_CONFIG);
         if (configOverrides != null)
             mergedGitGraph.putAll(configOverrides);
