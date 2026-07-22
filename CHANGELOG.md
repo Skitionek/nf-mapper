@@ -25,6 +25,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Diagram output attribution** – generated Mermaid diagrams now include a non-rendered comment header with nf-mapper attribution and a repository link (`https://github.com/Skitionek/nf-mapper`) so generated output is clearly traceable.
 - **MegaLinter – JAVA_PMD**: renamed non-static `final` field `RENDERER` to `renderer` in `MermaidRendererTest` and `SnapshotTest` to satisfy the PMD `FieldNamingConventions` rule (non-static final fields must be camelCase).
 - **MegaLinter – JAVA_CHECKSTYLE**: replaced the default `sun_checks.xml` config (1 403 style errors) with a project-specific `checkstyle.xml` that enforces real bug-catching rules while allowing the existing code conventions (long lines, no mandatory Javadoc, wildcard imports).
 - **MegaLinter – GROOVY_NPM_GROOVY_LINT**: excluded `*.nf` files from Groovy linting via `GROOVY_NPM_GROOVY_LINT_FILTER_REGEX_EXCLUDE`; Nextflow DSL2 files use a Groovy superset that causes false-positive errors (duplicate `def` across `script:`/`stub:` blocks, unreachable-code after labeled-branch `return` statements).
