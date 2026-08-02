@@ -21,7 +21,7 @@
         <dependency>
             <groupId>me.sunlan</groupId>
             <artifactId>antlr4-runtime</artifactId>
-            <version>4.13.2.9</version>
+            <version>4.13.2.12</version>
         </dependency>
         <dependency>
             <groupId>org.apache.groovy</groupId>
