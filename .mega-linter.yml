@@ -13,6 +13,11 @@ COPYPASTE_JSCPD_ARGUMENTS: "--threshold 10"
 DISABLE_ERRORS_LINTERS:
   - SPELL_CSPELL
   - REPOSITORY_KINGFISHER
+  # Trivy fails with a fatal walk error when it tries to stat
+  # github_conf/branch_protection_rules.json – a file that Kingfisher may
+  # create during the same MegaLinter run but does not persist between steps.
+  # This is an infrastructure false positive, not a real vulnerability finding.
+  - REPOSITORY_TRIVY
 
 # Use a project-specific Checkstyle config that enforces real bug-catching
 # rules while allowing the existing code conventions (long lines, no Javadoc).

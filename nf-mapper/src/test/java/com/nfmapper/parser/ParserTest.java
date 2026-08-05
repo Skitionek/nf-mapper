@@ -1,7 +1,9 @@
 package com.nfmapper.parser;
 
-import com.nfmapper.model.*;
-import org.junit.jupiter.api.*;
+import com.nfmapper.model.NfProcess;
+import com.nfmapper.model.NfWorkflow;
+import com.nfmapper.model.ParsedPipeline;
+import org.junit.jupiter.api.Test;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
