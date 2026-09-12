@@ -106,6 +106,13 @@ class ParserTest {
         assertTrue(containsConnection(p.getConnections(), "ALIGN", "SORT"));
     }
 
+    @Test void testAssignmentFormProcessCallFixture() throws IOException {
+        ParsedPipeline p = PARSER.parseFile(fixture("t_assign.nf"));
+        assertTrue(containsConnection(p.getConnections(), "ALIGN", "SORT"),
+            "Expected ALIGN->SORT connection for assignment-form calls, got: "
+                + Arrays.deepToString(p.getConnections().toArray()));
+    }
+
     @Test void testExtractsOutputChannelPatterns() {
         String content = """
             process ALIGN {

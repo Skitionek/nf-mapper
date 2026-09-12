@@ -436,23 +436,74 @@ public class NextflowParser {
         } else if (stmt instanceof ExpressionStatement es) {
             Expression expr = es.getExpression();
             if (expr instanceof MethodCallExpression mce) {
-                String method = mce.getMethodAsString();
-                if (method != null && knownProcesses.contains(method)) {
-                    if (!calls.contains(method))
-                        calls.add(method);
-                    if (conditionContext != null && !conditionalInfo.containsKey(method)) {
-                        String[] parts = conditionContext.split(":", 2);
-                        conditionalInfo.put(method, parts);
-                    }
-                    Set<String> outRefs = new LinkedHashSet<>();
-                    for (Expression arg : getArgs(mce)) {
-                        collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
-                    }
-                    for (String src : outRefs) {
-                        connections.add(new String[] { src, method });
-                    }
-                }
+                recordProcessCall(mce, knownProcesses, channelVarMap, calls, connections,
+                        conditionalInfo, conditionContext);
+            } else if (expr instanceof BinaryExpression be
+                    && "=".equals(be.getOperation().getText())) {
+                // Assignment-form call: ch = PROC(args). The call itself (and any
+                // process calls nested in its arguments, e.g. ch = SORT(ALIGN(reads)))
+                // must still be registered as workflow calls / connections even though
+                // it is not a bare ExpressionStatement MethodCallExpression.
+                recordProcessCallsInExpression(be.getRightExpression(), knownProcesses,
+                        channelVarMap, calls, connections, conditionalInfo, conditionContext);
             }
+        }
+    }
+
+    /**
+     * Recursively find every {@link MethodCallExpression} within {@code expr} whose
+     * method name is a known process (e.g. nested calls like {@code SORT(ALIGN(reads))})
+     * and record each one via {@link #recordProcessCall}.
+     */
+    private void recordProcessCallsInExpression(Expression expr, Set<String> knownProcesses,
+            Map<String, String> channelVarMap, List<String> calls, List<String[]> connections,
+            Map<String, String[]> conditionalInfo, String conditionContext) {
+        if (expr == null)
+            return;
+        if (expr instanceof MethodCallExpression mce) {
+            String method = mce.getMethodAsString();
+            if (method != null && knownProcesses.contains(method)) {
+                recordProcessCall(mce, knownProcesses, channelVarMap, calls, connections,
+                        conditionalInfo, conditionContext);
+            } else {
+                recordProcessCallsInExpression(mce.getObjectExpression(), knownProcesses,
+                        channelVarMap, calls, connections, conditionalInfo, conditionContext);
+            }
+            for (Expression arg : getArgs(mce)) {
+                recordProcessCallsInExpression(arg, knownProcesses, channelVarMap, calls,
+                        connections, conditionalInfo, conditionContext);
+            }
+        } else if (expr instanceof BinaryExpression be) {
+            recordProcessCallsInExpression(be.getLeftExpression(), knownProcesses, channelVarMap,
+                    calls, connections, conditionalInfo, conditionContext);
+            recordProcessCallsInExpression(be.getRightExpression(), knownProcesses, channelVarMap,
+                    calls, connections, conditionalInfo, conditionContext);
+        }
+    }
+
+    /**
+     * Register {@code mce} (a call to a known process) as a workflow call, tag it
+     * with the current conditional context if any, and add connections from any
+     * out-refs found among its arguments.
+     */
+    private void recordProcessCall(MethodCallExpression mce, Set<String> knownProcesses,
+            Map<String, String> channelVarMap, List<String> calls, List<String[]> connections,
+            Map<String, String[]> conditionalInfo, String conditionContext) {
+        String method = mce.getMethodAsString();
+        if (method == null || !knownProcesses.contains(method))
+            return;
+        if (!calls.contains(method))
+            calls.add(method);
+        if (conditionContext != null && !conditionalInfo.containsKey(method)) {
+            String[] parts = conditionContext.split(":", 2);
+            conditionalInfo.put(method, parts);
+        }
+        Set<String> outRefs = new LinkedHashSet<>();
+        for (Expression arg : getArgs(mce)) {
+            collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
+        }
+        for (String src : outRefs) {
+            connections.add(new String[] { src, method });
         }
     }
 
@@ -491,8 +542,17 @@ public class NextflowParser {
                 if (!channelVarMap.containsKey(varName)) {
                     Set<String> refs = new LinkedHashSet<>();
                     collectOutRefs(be.getRightExpression(), knownProcesses, channelVarMap, refs);
-                    if (!refs.isEmpty())
+                    if (!refs.isEmpty()) {
                         channelVarMap.put(varName, refs.iterator().next());
+                    } else {
+                        // Assignment-form process call: ch = PROC(args). The RHS is a bare
+                        // MethodCallExpression whose method name is a known process – map the
+                        // channel var directly to that process so downstream consumers connect
+                        // to it (mirrors the `.out`-ref resolution above).
+                        String proc = bareProcessCallName(be.getRightExpression(), knownProcesses);
+                        if (proc != null)
+                            channelVarMap.put(varName, proc);
+                    }
                 }
             }
         }
@@ -508,6 +568,23 @@ public class NextflowParser {
                 }
             }
         }
+    }
+
+    /**
+     * If {@code expr} is a bare (possibly implicit-{@code this}) call to a known
+     * process, e.g. {@code ALIGN(reads)}, returns the process name; otherwise
+     * {@code null}. Chained forms such as {@code ALIGN(reads).out} or
+     * {@code ALIGN(reads) | SORT} are NOT matched here – those already resolve via
+     * {@link #collectOutRefs} (the {@code .out} case) or the pipe-operator handling.
+     */
+    private String bareProcessCallName(Expression expr, Set<String> knownProcesses) {
+        if (expr instanceof MethodCallExpression mce) {
+            String method = mce.getMethodAsString();
+            if (method != null && knownProcesses.contains(method)) {
+                return method;
+            }
+        }
+        return null;
     }
 
     private String extractSingleVarFromClosure(ClosureExpression ce) {
@@ -548,6 +625,12 @@ public class NextflowParser {
                 collectOutRefs(obj, knownProcesses, channelVarMap, found);
             }
         } else if (expr instanceof MethodCallExpression mce) {
+            // Nested process call used directly as an argument, e.g. SORT(ALIGN(reads)):
+            // the inner call's return value is the output of that process.
+            String method = mce.getMethodAsString();
+            if (method != null && knownProcesses.contains(method)) {
+                found.add(method);
+            }
             collectOutRefs(mce.getObjectExpression(), knownProcesses, channelVarMap, found);
             for (Expression arg : getArgs(mce)) {
                 collectOutRefs(arg, knownProcesses, channelVarMap, found);
