@@ -751,6 +751,30 @@ class ParserTest {
     }
 
     // -------------------------------------------------------------------------
+    // Known nf-lang grammar limitations
+    // -------------------------------------------------------------------------
+
+    /**
+     * nf-lang 25.04.4 fails to parse a process definition when the first
+     * section label (e.g. {@code output:}) appears on the same physical
+     * line as the opening brace of {@code process X { ... }}. The identical
+     * process parses fine once that label is moved to its own line. This
+     * is a genuine upstream grammar limitation (confirmed against nf-lang
+     * directly, not an nf-mapper parsing bug): the parser currently
+     * degrades gracefully by returning an empty pipeline instead of
+     * throwing, so we pin that observable behavior here as a regression
+     * fixture until nf-lang fixes the grammar or nf-mapper works around it.
+     */
+    @Test void testInlineSectionLabelIsKnownNfLangLimitation() throws IOException {
+        ParsedPipeline p = PARSER.parseFile(fixture("inline_section_label_limitation.nf"));
+        assertTrue(p.getProcesses().isEmpty(),
+                "Expected nf-lang to still reject an inline section label; "
+                        + "if this now succeeds, nf-lang has fixed the limitation "
+                        + "and this test/fixture should be updated to assert success instead.");
+        assertTrue(p.getWorkflows().isEmpty());
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
