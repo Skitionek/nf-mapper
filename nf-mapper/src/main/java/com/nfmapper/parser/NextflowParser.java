@@ -91,7 +91,7 @@ public class NextflowParser {
                 deduplicateConnections(allConnections), namedWfMap);
 
         return new ParsedPipeline(allProcesses, allWorkflows, allIncludes,
-                resolvedConns, allConditionalInfo);
+                resolvedConns, allConditionalInfo, main.getParseErrorCount());
     }
 
     public ParsedPipeline parseContent(String content) {
@@ -101,19 +101,25 @@ public class NextflowParser {
 
         CompilerConfiguration config = new CompilerConfiguration();
         config.setTolerance(Integer.MAX_VALUE);
+        ErrorCollector errorCollector = new ErrorCollector(config);
         SourceUnit sourceUnit = new SourceUnit(
-                "pipeline.nf", content, config, null, new ErrorCollector(config));
+                "pipeline.nf", content, config, null, errorCollector);
 
         ScriptAstBuilder builder = new ScriptAstBuilder(sourceUnit);
         ModuleNode module;
         try {
             module = builder.buildAST();
         } catch (Exception e) {
-            return empty();
+            int count = errorCollector.hasErrors() ? errorCollector.getErrorCount() : 1;
+            return empty(count);
+        }
+
+        if (errorCollector.hasErrors()) {
+            return empty(errorCollector.getErrorCount());
         }
 
         if (!(module instanceof ScriptNode script))
-            return empty();
+            return empty(1);
 
         List<NfProcess> processes = new ArrayList<>();
         List<NfWorkflow> workflows = new ArrayList<>();
@@ -888,7 +894,11 @@ public class NextflowParser {
     }
 
     private static ParsedPipeline empty() {
+        return empty(0);
+    }
+
+    private static ParsedPipeline empty(int errorCount) {
         return new ParsedPipeline(Collections.emptyList(), Collections.emptyList(),
-                Collections.emptyList(), Collections.emptyList());
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyMap(), errorCount);
     }
 }

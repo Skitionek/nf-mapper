@@ -101,6 +101,11 @@ public class NfMapperCli implements Callable<Integer> {
             return 1;
         }
 
+        if (pipeline.isParseFailure()) {
+            err.println("nf-mapper: error: failed to parse '" + input + "'");
+            return 1;
+        }
+
         String diagram = renderPipeline(pipeline, title, configMap, rendererMode, themeMode);
 
         String outputContent = "md".equals(format) ? "```mermaid\n" + diagram + "\n```" : diagram;
@@ -248,6 +253,9 @@ public class NfMapperCli implements Callable<Integer> {
             try {
                 NextflowParser parser = new NextflowParser();
                 ParsedPipeline pipeline = parser.parseFile(pipelinePath);
+                if (pipeline.isParseFailure()) {
+                    throw new IOException("failed to parse '" + pipelinePath + "'");
+                }
                 String diagram = renderPipeline(pipeline, blockTitle, configMap, renderer, theme);
                 String body = "md".equals(fmt) ? "```mermaid\n" + diagram + "\n```" : diagram;
                 segments.add(opening + "\n" + body + "\n" + closing);
