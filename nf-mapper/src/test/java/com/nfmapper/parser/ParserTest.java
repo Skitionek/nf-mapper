@@ -657,6 +657,15 @@ class ParserTest {
                 + connectionList(p.getConnections()));
     }
 
+    @Test void testPipeChainFixtureConnections() throws IOException {
+        // Real-world-shaped fixture: Channel.fromPath(...) | TRIM | ALIGN | SORT.
+        ParsedPipeline p = PARSER.parseFile(fixture("pipe_chain.nf"));
+        assertTrue(containsConnection(p.getConnections(), "TRIM", "ALIGN"),
+            "Expected TRIM->ALIGN for pipe chain fixture, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "ALIGN", "SORT"),
+            "Expected ALIGN->SORT for pipe chain fixture, got: " + connectionList(p.getConnections()));
+    }
+
     // -------------------------------------------------------------------------
     // Nested / chained channel-op call-argument tests
     // -------------------------------------------------------------------------
