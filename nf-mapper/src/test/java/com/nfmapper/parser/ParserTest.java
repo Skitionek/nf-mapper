@@ -603,6 +603,61 @@ class ParserTest {
     }
 
     // -------------------------------------------------------------------------
+    // Pipe operator (|) tests
+    // -------------------------------------------------------------------------
+
+    @Test void testBarePipeChainConnections() {
+        // A | B | C should yield A->B and B->C.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    main:\n" +
+            "        A(params.input) | B | C\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "B"),
+            "Expected A->B, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testChannelFromPathPipeChain() {
+        // Channel.fromPath(...) | FASTQC | MULTIQC should yield FASTQC->MULTIQC
+        // and still capture the fromPath file ref.
+        String content =
+            "process FASTQC {\n    script:\n    'echo fastqc'\n}\n" +
+            "process MULTIQC {\n    script:\n    'echo multiqc'\n}\n" +
+            "workflow {\n" +
+            "    main:\n" +
+            "        Channel.fromPath(\"*.fastq.gz\") | FASTQC | MULTIQC\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "FASTQC", "MULTIQC"),
+            "Expected FASTQC->MULTIQC, got: " + connectionList(p.getConnections()));
+        NfWorkflow entry = p.getWorkflows().stream().filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry, "Should have an entry workflow");
+        assertTrue(entry.getMainFileRefs().contains("*.fastq.gz"),
+            "Expected *.fastq.gz in mainFileRefs, got: " + entry.getMainFileRefs());
+    }
+
+    @Test void testMixedAssignmentFormPipeResolves() {
+        // x = CH | PROC should resolve just like the bare pipe form.
+        String content =
+            "process CH_SRC {\n    script:\n    'echo src'\n}\n" +
+            "process PROC {\n    script:\n    'echo proc'\n}\n" +
+            "workflow {\n" +
+            "    main:\n" +
+            "        x = CH_SRC(params.input) | PROC\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "CH_SRC", "PROC"),
+            "Expected CH_SRC->PROC for mixed assignment-form pipe, got: "
+                + connectionList(p.getConnections()));
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
