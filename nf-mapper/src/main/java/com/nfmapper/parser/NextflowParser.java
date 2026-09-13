@@ -440,13 +440,96 @@ public class NextflowParser {
                         conditionalInfo, conditionContext);
             } else if (expr instanceof BinaryExpression be
                     && "=".equals(be.getOperation().getText())) {
-                // Assignment-form call: ch = PROC(args). The call itself (and any
-                // process calls nested in its arguments, e.g. ch = SORT(ALIGN(reads)))
-                // must still be registered as workflow calls / connections even though
-                // it is not a bare ExpressionStatement MethodCallExpression.
-                recordProcessCallsInExpression(be.getRightExpression(), knownProcesses,
-                        channelVarMap, calls, connections, conditionalInfo, conditionContext);
+                Expression rhs = be.getRightExpression();
+                if (rhs instanceof BinaryExpression pipeBe && "|".equals(pipeBe.getOperation().getText())) {
+                    // Mixed form: x = CH | PROC1 | PROC2. Thread the pipe chain the same
+                    // way a bare pipe statement is handled below.
+                    handlePipeExpression(pipeBe, knownProcesses, channelVarMap, calls,
+                            connections, conditionalInfo, conditionContext);
+                } else {
+                    // Assignment-form call: ch = PROC(args). The call itself (and any
+                    // process calls nested in its arguments, e.g. ch = SORT(ALIGN(reads)))
+                    // must still be registered as workflow calls / connections even though
+                    // it is not a bare ExpressionStatement MethodCallExpression.
+                    recordProcessCallsInExpression(rhs, knownProcesses,
+                            channelVarMap, calls, connections, conditionalInfo, conditionContext);
+                }
+            } else if (expr instanceof BinaryExpression be
+                    && "|".equals(be.getOperation().getText())) {
+                // Pipe-form call: A | B | C (optionally seeded by a channel source, e.g.
+                // Channel.fromPath(...) | FASTQC | MULTIQC). Walk operands left-to-right,
+                // treating each operand that names a known process as a call and chaining
+                // connections from the previous resolved stage.
+                handlePipeExpression(be, knownProcesses, channelVarMap, calls,
+                        connections, conditionalInfo, conditionContext);
             }
+        }
+    }
+
+    /**
+     * Handle a (possibly chained) pipe expression {@code a | B | C}, flattening it
+     * left-to-right and threading connections between successive stages. Each stage
+     * is either:
+     * <ul>
+     * <li>a call to a known process (bare {@code VariableExpression} or
+     * {@code MethodCallExpression}) &mdash; registered as a workflow call, and an
+     * edge is added from the previous resolved stage (if any);</li>
+     * <li>anything else (e.g. a channel source like {@code Channel.fromPath(...)},
+     * or a channel variable) &mdash; resolved via {@link #collectOutRefs} to seed the
+     * next stage's upstream, without itself becoming a call or edge target.</li>
+     * </ul>
+     * The left-most operand is commonly a channel source: it seeds no upstream
+     * process edge (there is no "previous stage" yet) but any file refs it contains
+     * are still picked up elsewhere via {@link #collectMainFileRefs}.
+     */
+    private void handlePipeExpression(BinaryExpression be, Set<String> knownProcesses,
+            Map<String, String> channelVarMap, List<String> calls, List<String[]> connections,
+            Map<String, String[]> conditionalInfo, String conditionContext) {
+        List<Expression> operands = new ArrayList<>();
+        flattenPipeOperands(be, operands);
+        String prevStage = null;
+        for (Expression operand : operands) {
+            String stageName = null;
+            if (operand instanceof MethodCallExpression mce
+                    && mce.getMethodAsString() != null
+                    && knownProcesses.contains(mce.getMethodAsString())) {
+                recordProcessCall(mce, knownProcesses, channelVarMap, calls, connections,
+                        conditionalInfo, conditionContext);
+                stageName = mce.getMethodAsString();
+            } else if (operand instanceof VariableExpression ve && knownProcesses.contains(ve.getName())) {
+                String method = ve.getName();
+                if (!calls.contains(method))
+                    calls.add(method);
+                if (conditionContext != null && !conditionalInfo.containsKey(method)) {
+                    String[] parts = conditionContext.split(":", 2);
+                    conditionalInfo.put(method, parts);
+                }
+                stageName = method;
+            } else {
+                Set<String> refs = new LinkedHashSet<>();
+                collectOutRefs(operand, knownProcesses, channelVarMap, refs);
+                if (!refs.isEmpty())
+                    stageName = refs.iterator().next();
+            }
+            if (stageName != null) {
+                if (prevStage != null && !prevStage.equals(stageName)) {
+                    connections.add(new String[] { prevStage, stageName });
+                }
+                prevStage = stageName;
+            }
+        }
+    }
+
+    /**
+     * Flatten a left-associative chain of {@code |} BinaryExpressions into its
+     * ordered list of operands, e.g. {@code (a | B) | C} becomes {@code [a, B, C]}.
+     */
+    private void flattenPipeOperands(Expression expr, List<Expression> out) {
+        if (expr instanceof BinaryExpression be && "|".equals(be.getOperation().getText())) {
+            flattenPipeOperands(be.getLeftExpression(), out);
+            flattenPipeOperands(be.getRightExpression(), out);
+        } else {
+            out.add(expr);
         }
     }
 
