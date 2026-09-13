@@ -91,6 +91,34 @@ class CliTest {
     }
 
     @Test
+    void testParseFailureReturnsWarningAndNonZeroExit() {
+        ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
+        ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
+        int rc = NfMapperCli.run(new String[] { fixture("inline_section_label_limitation.nf") },
+                new PrintStream(outBuf), new PrintStream(errBuf));
+        assertNotEquals(0, rc);
+        String errOutput = errBuf.toString();
+        assertTrue(errOutput.contains("nf-mapper: warning:"), "stderr was:\n" + errOutput);
+        assertTrue(errOutput.contains("parse error"), "stderr was:\n" + errOutput);
+    }
+
+    @Test
+    void testCommentsOnlyFileIsValidEmptyNotParseFailure() throws IOException {
+        Path tmp = Files.createTempFile("comments-only", ".nf");
+        Files.writeString(tmp, "// just a comment, no processes or workflows\n");
+        try {
+            ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
+            ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
+            int rc = NfMapperCli.run(new String[] { tmp.toString() },
+                    new PrintStream(outBuf), new PrintStream(errBuf));
+            assertEquals(0, rc);
+            assertFalse(errBuf.toString().contains("nf-mapper: warning:"));
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    @Test
     void testSimpleWorkflowConnections() {
         String output = runCli(fixture("simple_workflow.nf"));
         assertTrue(output.contains("commit id: \"FASTQC\""), "Output was:\n" + output);

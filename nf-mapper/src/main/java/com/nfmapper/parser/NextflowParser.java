@@ -114,12 +114,16 @@ public class NextflowParser {
             return empty(count);
         }
 
-        if (errorCollector.hasErrors()) {
-            return empty(errorCollector.getErrorCount());
-        }
+        // Note: with tolerance set to Integer.MAX_VALUE the builder recovers from
+        // many syntax issues and still produces a usable AST (e.g. some valid
+        // constructs get flagged as non-fatal warnings/errors internally). Don't
+        // treat errorCollector.hasErrors() alone as fatal — only bail out when the
+        // AST itself is unusable. The error count is still threaded through so
+        // isParseFailure() can flag a truly empty+errored result as a diagnostic.
+        int errorCount = errorCollector.getErrorCount();
 
         if (!(module instanceof ScriptNode script))
-            return empty(1);
+            return empty(Math.max(errorCount, 1));
 
         List<NfProcess> processes = new ArrayList<>();
         List<NfWorkflow> workflows = new ArrayList<>();
@@ -179,7 +183,7 @@ public class NextflowParser {
                 deduplicateConnections(connections), namedWfMap);
 
         return new ParsedPipeline(processes, workflows, includes,
-                resolvedConns, conditionalInfo);
+                resolvedConns, conditionalInfo, errorCount);
     }
 
     // -------------------------------------------------------------------------
