@@ -348,6 +348,53 @@ class SnapshotTest {
     }
 
     @Test
+    void testSnapshotAssignmentFormProcessCalls() throws IOException {
+        // ch = PROC(...) then NEXT(ch) assignment-form calls (t_assign.nf).
+        ParsedPipeline pipeline = PARSER.parseFile(fixture("t_assign.nf"));
+        String diagram = renderer.render(pipeline, "Assignment-Form Process Calls", null);
+        writeSnapshot("t_assign", diagram, "nf-mapper/src/test/resources/fixtures/t_assign.nf");
+        assertTrue(diagram.contains("gitGraph"));
+        assertTrue(diagram.contains("commit id: \"ALIGN\""));
+        assertTrue(diagram.contains("commit id: \"SORT\""));
+    }
+
+    @Test
+    void testSnapshotPipeChain() throws IOException {
+        // Pipe-operator idiom: Channel.fromPath(...) | TRIM | ALIGN | SORT.
+        ParsedPipeline pipeline = PARSER.parseFile(fixture("pipe_chain.nf"));
+        String diagram = renderer.render(pipeline, "Pipe-Operator Chain", null);
+        writeSnapshot("pipe_chain", diagram, "nf-mapper/src/test/resources/fixtures/pipe_chain.nf");
+        assertTrue(diagram.contains("gitGraph"));
+        assertTrue(diagram.contains("commit id: \"TRIM\""));
+        assertTrue(diagram.contains("commit id: \"ALIGN\""));
+        assertTrue(diagram.contains("commit id: \"SORT\""));
+    }
+
+    @Test
+    void testSnapshotNestedChannelOps() throws IOException {
+        // mix()/collect() as call arguments (nested_channel_ops.nf).
+        //
+        // Note: the parser correctly resolves ALL connections for this fixture
+        // (see ParserTest#testNestedChannelOpsFixture: ALIGN->ANNOTATE,
+        // CALL_VARIANTS->ANNOTATE, ANNOTATE->SUMMARY). However the gitGraph
+        // renderer currently drops the ANNOTATE commit from the visible diagram
+        // when it sits at a merge-then-branch point (fan-in from two upstream
+        // processes immediately followed by a fan-out edge) -- a known renderer
+        // limitation distinct from the parser's connection detection, out of
+        // scope for this test-coverage task. This snapshot documents that
+        // rendered (lossy) shape for visual review; the connection-level
+        // correctness is covered at the parser layer.
+        ParsedPipeline pipeline = PARSER.parseFile(fixture("nested_channel_ops.nf"));
+        String diagram = renderer.render(pipeline, "Nested Channel Ops", null);
+        writeSnapshot("nested_channel_ops", diagram,
+                "nf-mapper/src/test/resources/fixtures/nested_channel_ops.nf");
+        assertTrue(diagram.contains("gitGraph"));
+        assertTrue(diagram.contains("commit id: \"ALIGN\""));
+        assertTrue(diagram.contains("commit id: \"CALL_VARIANTS\""));
+        assertTrue(diagram.contains("commit id: \"SUMMARY\""));
+    }
+
+    @Test
     void testSnapshotQuantmsStyle() throws IOException {
         // Multi-file pipeline: main.nf includes workflows/quantms.nf
         // Sub-workflows BIGBIO_QUANTMS and QUANTMS should be unfolded to show the

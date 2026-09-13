@@ -106,6 +106,13 @@ class ParserTest {
         assertTrue(containsConnection(p.getConnections(), "ALIGN", "SORT"));
     }
 
+    @Test void testAssignmentFormProcessCallFixture() throws IOException {
+        ParsedPipeline p = PARSER.parseFile(fixture("t_assign.nf"));
+        assertTrue(containsConnection(p.getConnections(), "ALIGN", "SORT"),
+            "Expected ALIGN->SORT connection for assignment-form calls, got: "
+                + Arrays.deepToString(p.getConnections().toArray()));
+    }
+
     @Test void testExtractsOutputChannelPatterns() {
         String content = """
             process ALIGN {
@@ -593,6 +600,178 @@ class ParserTest {
         p.getConnections().forEach(c ->
             assertFalse(c[0].equals(c[1]),
                 "Self-loop edge found in connections: " + c[0] + " -> " + c[1]));
+    }
+
+    // -------------------------------------------------------------------------
+    // Pipe operator (|) tests
+    // -------------------------------------------------------------------------
+
+    @Test void testBarePipeChainConnections() {
+        // A | B | C should yield A->B and B->C.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    main:\n" +
+            "        A(params.input) | B | C\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "B"),
+            "Expected A->B, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testChannelFromPathPipeChain() {
+        // Channel.fromPath(...) | FASTQC | MULTIQC should yield FASTQC->MULTIQC
+        // and still capture the fromPath file ref.
+        String content =
+            "process FASTQC {\n    script:\n    'echo fastqc'\n}\n" +
+            "process MULTIQC {\n    script:\n    'echo multiqc'\n}\n" +
+            "workflow {\n" +
+            "    main:\n" +
+            "        Channel.fromPath(\"*.fastq.gz\") | FASTQC | MULTIQC\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "FASTQC", "MULTIQC"),
+            "Expected FASTQC->MULTIQC, got: " + connectionList(p.getConnections()));
+        NfWorkflow entry = p.getWorkflows().stream().filter(w -> w.getName() == null).findFirst().orElse(null);
+        assertNotNull(entry, "Should have an entry workflow");
+        assertTrue(entry.getMainFileRefs().contains("*.fastq.gz"),
+            "Expected *.fastq.gz in mainFileRefs, got: " + entry.getMainFileRefs());
+    }
+
+    @Test void testMixedAssignmentFormPipeResolves() {
+        // x = CH | PROC should resolve just like the bare pipe form.
+        String content =
+            "process CH_SRC {\n    script:\n    'echo src'\n}\n" +
+            "process PROC {\n    script:\n    'echo proc'\n}\n" +
+            "workflow {\n" +
+            "    main:\n" +
+            "        x = CH_SRC(params.input) | PROC\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "CH_SRC", "PROC"),
+            "Expected CH_SRC->PROC for mixed assignment-form pipe, got: "
+                + connectionList(p.getConnections()));
+    }
+
+    @Test void testPipeChainFixtureConnections() throws IOException {
+        // Real-world-shaped fixture: Channel.fromPath(...) | TRIM | ALIGN | SORT.
+        ParsedPipeline p = PARSER.parseFile(fixture("pipe_chain.nf"));
+        assertTrue(containsConnection(p.getConnections(), "TRIM", "ALIGN"),
+            "Expected TRIM->ALIGN for pipe chain fixture, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "ALIGN", "SORT"),
+            "Expected ALIGN->SORT for pipe chain fixture, got: " + connectionList(p.getConnections()));
+    }
+
+    // -------------------------------------------------------------------------
+    // Nested / chained channel-op call-argument tests
+    // -------------------------------------------------------------------------
+
+    @Test void testMixChannelOpAsCallArgResolvesBothSources() {
+        // C(A.out.mix(B.out)) should yield both A->C and B->C.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(params.input)\n" +
+            "    C(A.out.mix(B.out))\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "C"),
+            "Expected A->C for mix() call arg, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C for mix() call arg, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testCombineChannelOpAsCallArgResolvesBothSources() {
+        // C(A.out.combine(B.out)) should yield both A->C and B->C.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(params.input)\n" +
+            "    C(A.out.combine(B.out))\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "C"),
+            "Expected A->C for combine() call arg, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C for combine() call arg, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testJoinChannelOpAsCallArgResolvesBothSources() {
+        // C(A.out.join(B.out)) should yield both A->C and B->C.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(params.input)\n" +
+            "    C(A.out.join(B.out))\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "C"),
+            "Expected A->C for join() call arg, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C for join() call arg, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testCollectChannelOpAsCallArgResolvesSource() {
+        // B(A.out.collect()) should still yield A->B.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(A.out.collect())\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "B"),
+            "Expected A->B for collect() call arg, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testNestedChannelOpsFixture() throws IOException {
+        // Real-world-shaped fixture: mix() combining two upstream process outputs,
+        // then collect() on the merged downstream output.
+        ParsedPipeline p = PARSER.parseFile(fixture("nested_channel_ops.nf"));
+        assertTrue(containsConnection(p.getConnections(), "ALIGN", "ANNOTATE"),
+            "Expected ALIGN->ANNOTATE, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "CALL_VARIANTS", "ANNOTATE"),
+            "Expected CALL_VARIANTS->ANNOTATE, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "ANNOTATE", "SUMMARY"),
+            "Expected ANNOTATE->SUMMARY, got: " + connectionList(p.getConnections()));
+    }
+
+    // -------------------------------------------------------------------------
+    // Known nf-lang grammar limitations
+    // -------------------------------------------------------------------------
+
+    /**
+     * nf-lang 25.04.4 fails to parse a process definition when the first
+     * section label (e.g. {@code output:}) appears on the same physical
+     * line as the opening brace of {@code process X { ... }}. The identical
+     * process parses fine once that label is moved to its own line. This
+     * is a genuine upstream grammar limitation (confirmed against nf-lang
+     * directly, not an nf-mapper parsing bug): the parser currently
+     * degrades gracefully by returning an empty pipeline instead of
+     * throwing, so we pin that observable behavior here as a regression
+     * fixture until nf-lang fixes the grammar or nf-mapper works around it.
+     */
+    @Test void testInlineSectionLabelIsKnownNfLangLimitation() throws IOException {
+        ParsedPipeline p = PARSER.parseFile(fixture("inline_section_label_limitation.nf"));
+        assertTrue(p.getProcesses().isEmpty(),
+                "Expected nf-lang to still reject an inline section label; "
+                        + "if this now succeeds, nf-lang has fixed the limitation "
+                        + "and this test/fixture should be updated to assert success instead.");
+        assertTrue(p.getWorkflows().isEmpty());
     }
 
     // -------------------------------------------------------------------------
