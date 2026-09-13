@@ -102,7 +102,8 @@ public class NfMapperCli implements Callable<Integer> {
         }
 
         if (pipeline.isParseFailure()) {
-            err.println("nf-mapper: error: failed to parse '" + input + "'");
+            err.println("nf-mapper: warning: no processes or workflows found in '" + input
+                    + "' (" + pipeline.getParseErrorCount() + " parse error(s))");
             return 1;
         }
 
@@ -254,7 +255,8 @@ public class NfMapperCli implements Callable<Integer> {
                 NextflowParser parser = new NextflowParser();
                 ParsedPipeline pipeline = parser.parseFile(pipelinePath);
                 if (pipeline.isParseFailure()) {
-                    throw new IOException("failed to parse '" + pipelinePath + "'");
+                    throw new IOException("no processes or workflows found in '" + pipelinePath
+                            + "' (" + pipeline.getParseErrorCount() + " parse error(s))");
                 }
                 String diagram = renderPipeline(pipeline, blockTitle, configMap, renderer, theme);
                 String body = "md".equals(fmt) ? "```mermaid\n" + diagram + "\n```" : diagram;
