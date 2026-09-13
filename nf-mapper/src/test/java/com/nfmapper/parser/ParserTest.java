@@ -658,6 +658,90 @@ class ParserTest {
     }
 
     // -------------------------------------------------------------------------
+    // Nested / chained channel-op call-argument tests
+    // -------------------------------------------------------------------------
+
+    @Test void testMixChannelOpAsCallArgResolvesBothSources() {
+        // C(A.out.mix(B.out)) should yield both A->C and B->C.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(params.input)\n" +
+            "    C(A.out.mix(B.out))\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "C"),
+            "Expected A->C for mix() call arg, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C for mix() call arg, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testCombineChannelOpAsCallArgResolvesBothSources() {
+        // C(A.out.combine(B.out)) should yield both A->C and B->C.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(params.input)\n" +
+            "    C(A.out.combine(B.out))\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "C"),
+            "Expected A->C for combine() call arg, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C for combine() call arg, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testJoinChannelOpAsCallArgResolvesBothSources() {
+        // C(A.out.join(B.out)) should yield both A->C and B->C.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "process C {\n    script:\n    'echo c'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(params.input)\n" +
+            "    C(A.out.join(B.out))\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "C"),
+            "Expected A->C for join() call arg, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "B", "C"),
+            "Expected B->C for join() call arg, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testCollectChannelOpAsCallArgResolvesSource() {
+        // B(A.out.collect()) should still yield A->B.
+        String content =
+            "process A {\n    script:\n    'echo a'\n}\n" +
+            "process B {\n    script:\n    'echo b'\n}\n" +
+            "workflow {\n" +
+            "    A(params.input)\n" +
+            "    B(A.out.collect())\n" +
+            "}\n";
+        ParsedPipeline p = PARSER.parseContent(content);
+        assertTrue(containsConnection(p.getConnections(), "A", "B"),
+            "Expected A->B for collect() call arg, got: " + connectionList(p.getConnections()));
+    }
+
+    @Test void testNestedChannelOpsFixture() throws IOException {
+        // Real-world-shaped fixture: mix() combining two upstream process outputs,
+        // then collect() on the merged downstream output.
+        ParsedPipeline p = PARSER.parseFile(fixture("nested_channel_ops.nf"));
+        assertTrue(containsConnection(p.getConnections(), "ALIGN", "ANNOTATE"),
+            "Expected ALIGN->ANNOTATE, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "CALL_VARIANTS", "ANNOTATE"),
+            "Expected CALL_VARIANTS->ANNOTATE, got: " + connectionList(p.getConnections()));
+        assertTrue(containsConnection(p.getConnections(), "ANNOTATE", "SUMMARY"),
+            "Expected ANNOTATE->SUMMARY, got: " + connectionList(p.getConnections()));
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
