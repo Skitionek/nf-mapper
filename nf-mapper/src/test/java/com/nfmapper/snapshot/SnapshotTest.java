@@ -359,6 +359,18 @@ class SnapshotTest {
     }
 
     @Test
+    void testSnapshotPipeChain() throws IOException {
+        // Pipe-operator idiom: Channel.fromPath(...) | TRIM | ALIGN | SORT.
+        ParsedPipeline pipeline = PARSER.parseFile(fixture("pipe_chain.nf"));
+        String diagram = renderer.render(pipeline, "Pipe-Operator Chain", null);
+        writeSnapshot("pipe_chain", diagram, "nf-mapper/src/test/resources/fixtures/pipe_chain.nf");
+        assertTrue(diagram.contains("gitGraph"));
+        assertTrue(diagram.contains("commit id: \"TRIM\""));
+        assertTrue(diagram.contains("commit id: \"ALIGN\""));
+        assertTrue(diagram.contains("commit id: \"SORT\""));
+    }
+
+    @Test
     void testSnapshotNestedChannelOps() throws IOException {
         // mix()/collect() as call arguments (nested_channel_ops.nf).
         //
