@@ -1,5 +1,10 @@
 # Dependabot configuration
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# `groups` below exist to keep tightly-coupled dependencies in a single PR.
+# Artifacts in the same group ship from one release train, so bumping one
+# alone produces a broken build or a split-version classpath.
+# Add an artifact to an existing group rather than letting it be bumped solo.
 
 version: 2
 updates:
@@ -22,3 +27,14 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "build"
+    groups:
+      # groovy and groovy-json are published from one Groovy release and are
+      # expected to be the same version on the classpath.
+      groovy:
+        patterns:
+          - "org.apache.groovy:*"
+      # The Maven core plugins are bumped as routine build maintenance;
+      # keeping them in one PR avoids a steady trickle of one-line changes.
+      maven-plugins:
+        patterns:
+          - "org.apache.maven.plugins:*"
