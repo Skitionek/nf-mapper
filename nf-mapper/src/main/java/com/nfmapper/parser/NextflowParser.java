@@ -91,7 +91,7 @@ public class NextflowParser {
                 deduplicateConnections(allConnections), namedWfMap);
 
         return new ParsedPipeline(allProcesses, allWorkflows, allIncludes,
-                resolvedConns, allConditionalInfo);
+                resolvedConns, allConditionalInfo, main.getParseErrorCount());
     }
 
     public ParsedPipeline parseContent(String content) {
@@ -101,19 +101,29 @@ public class NextflowParser {
 
         CompilerConfiguration config = new CompilerConfiguration();
         config.setTolerance(Integer.MAX_VALUE);
+        ErrorCollector errorCollector = new ErrorCollector(config);
         SourceUnit sourceUnit = new SourceUnit(
-                "pipeline.nf", content, config, null, new ErrorCollector(config));
+                "pipeline.nf", content, config, null, errorCollector);
 
         ScriptAstBuilder builder = new ScriptAstBuilder(sourceUnit);
         ModuleNode module;
         try {
             module = builder.buildAST();
         } catch (Exception e) {
-            return empty();
+            int count = errorCollector.hasErrors() ? errorCollector.getErrorCount() : 1;
+            return empty(count);
         }
 
+        // Note: with tolerance set to Integer.MAX_VALUE the builder recovers from
+        // many syntax issues and still produces a usable AST (e.g. some valid
+        // constructs get flagged as non-fatal warnings/errors internally). Don't
+        // treat errorCollector.hasErrors() alone as fatal — only bail out when the
+        // AST itself is unusable. The error count is still threaded through so
+        // isParseFailure() can flag a truly empty+errored result as a diagnostic.
+        int errorCount = errorCollector.getErrorCount();
+
         if (!(module instanceof ScriptNode script))
-            return empty();
+            return empty(Math.max(errorCount, 1));
 
         List<NfProcess> processes = new ArrayList<>();
         List<NfWorkflow> workflows = new ArrayList<>();
@@ -173,7 +183,7 @@ public class NextflowParser {
                 deduplicateConnections(connections), namedWfMap);
 
         return new ParsedPipeline(processes, workflows, includes,
-                resolvedConns, conditionalInfo);
+                resolvedConns, conditionalInfo, errorCount);
     }
 
     // -------------------------------------------------------------------------
@@ -436,23 +446,157 @@ public class NextflowParser {
         } else if (stmt instanceof ExpressionStatement es) {
             Expression expr = es.getExpression();
             if (expr instanceof MethodCallExpression mce) {
-                String method = mce.getMethodAsString();
-                if (method != null && knownProcesses.contains(method)) {
-                    if (!calls.contains(method))
-                        calls.add(method);
-                    if (conditionContext != null && !conditionalInfo.containsKey(method)) {
-                        String[] parts = conditionContext.split(":", 2);
-                        conditionalInfo.put(method, parts);
-                    }
-                    Set<String> outRefs = new LinkedHashSet<>();
-                    for (Expression arg : getArgs(mce)) {
-                        collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
-                    }
-                    for (String src : outRefs) {
-                        connections.add(new String[] { src, method });
-                    }
+                recordProcessCall(mce, knownProcesses, channelVarMap, calls, connections,
+                        conditionalInfo, conditionContext);
+            } else if (expr instanceof BinaryExpression be
+                    && "=".equals(be.getOperation().getText())) {
+                Expression rhs = be.getRightExpression();
+                if (rhs instanceof BinaryExpression pipeBe && "|".equals(pipeBe.getOperation().getText())) {
+                    // Mixed form: x = CH | PROC1 | PROC2. Thread the pipe chain the same
+                    // way a bare pipe statement is handled below.
+                    handlePipeExpression(pipeBe, knownProcesses, channelVarMap, calls,
+                            connections, conditionalInfo, conditionContext);
+                } else {
+                    // Assignment-form call: ch = PROC(args). The call itself (and any
+                    // process calls nested in its arguments, e.g. ch = SORT(ALIGN(reads)))
+                    // must still be registered as workflow calls / connections even though
+                    // it is not a bare ExpressionStatement MethodCallExpression.
+                    recordProcessCallsInExpression(rhs, knownProcesses,
+                            channelVarMap, calls, connections, conditionalInfo, conditionContext);
                 }
+            } else if (expr instanceof BinaryExpression be
+                    && "|".equals(be.getOperation().getText())) {
+                // Pipe-form call: A | B | C (optionally seeded by a channel source, e.g.
+                // Channel.fromPath(...) | FASTQC | MULTIQC). Walk operands left-to-right,
+                // treating each operand that names a known process as a call and chaining
+                // connections from the previous resolved stage.
+                handlePipeExpression(be, knownProcesses, channelVarMap, calls,
+                        connections, conditionalInfo, conditionContext);
             }
+        }
+    }
+
+    /**
+     * Handle a (possibly chained) pipe expression {@code a | B | C}, flattening it
+     * left-to-right and threading connections between successive stages. Each stage
+     * is either:
+     * <ul>
+     * <li>a call to a known process (bare {@code VariableExpression} or
+     * {@code MethodCallExpression}) &mdash; registered as a workflow call, and an
+     * edge is added from the previous resolved stage (if any);</li>
+     * <li>anything else (e.g. a channel source like {@code Channel.fromPath(...)},
+     * or a channel variable) &mdash; resolved via {@link #collectOutRefs} to seed the
+     * next stage's upstream, without itself becoming a call or edge target.</li>
+     * </ul>
+     * The left-most operand is commonly a channel source: it seeds no upstream
+     * process edge (there is no "previous stage" yet) but any file refs it contains
+     * are still picked up elsewhere via {@link #collectMainFileRefs}.
+     */
+    private void handlePipeExpression(BinaryExpression be, Set<String> knownProcesses,
+            Map<String, String> channelVarMap, List<String> calls, List<String[]> connections,
+            Map<String, String[]> conditionalInfo, String conditionContext) {
+        List<Expression> operands = new ArrayList<>();
+        flattenPipeOperands(be, operands);
+        String prevStage = null;
+        for (Expression operand : operands) {
+            String stageName = null;
+            if (operand instanceof MethodCallExpression mce
+                    && mce.getMethodAsString() != null
+                    && knownProcesses.contains(mce.getMethodAsString())) {
+                recordProcessCall(mce, knownProcesses, channelVarMap, calls, connections,
+                        conditionalInfo, conditionContext);
+                stageName = mce.getMethodAsString();
+            } else if (operand instanceof VariableExpression ve && knownProcesses.contains(ve.getName())) {
+                String method = ve.getName();
+                if (!calls.contains(method))
+                    calls.add(method);
+                if (conditionContext != null && !conditionalInfo.containsKey(method)) {
+                    String[] parts = conditionContext.split(":", 2);
+                    conditionalInfo.put(method, parts);
+                }
+                stageName = method;
+            } else {
+                Set<String> refs = new LinkedHashSet<>();
+                collectOutRefs(operand, knownProcesses, channelVarMap, refs);
+                if (!refs.isEmpty())
+                    stageName = refs.iterator().next();
+            }
+            if (stageName != null) {
+                if (prevStage != null && !prevStage.equals(stageName)) {
+                    connections.add(new String[] { prevStage, stageName });
+                }
+                prevStage = stageName;
+            }
+        }
+    }
+
+    /**
+     * Flatten a left-associative chain of {@code |} BinaryExpressions into its
+     * ordered list of operands, e.g. {@code (a | B) | C} becomes {@code [a, B, C]}.
+     */
+    private void flattenPipeOperands(Expression expr, List<Expression> out) {
+        if (expr instanceof BinaryExpression be && "|".equals(be.getOperation().getText())) {
+            flattenPipeOperands(be.getLeftExpression(), out);
+            flattenPipeOperands(be.getRightExpression(), out);
+        } else {
+            out.add(expr);
+        }
+    }
+
+    /**
+     * Recursively find every {@link MethodCallExpression} within {@code expr} whose
+     * method name is a known process (e.g. nested calls like {@code SORT(ALIGN(reads))})
+     * and record each one via {@link #recordProcessCall}.
+     */
+    private void recordProcessCallsInExpression(Expression expr, Set<String> knownProcesses,
+            Map<String, String> channelVarMap, List<String> calls, List<String[]> connections,
+            Map<String, String[]> conditionalInfo, String conditionContext) {
+        if (expr == null)
+            return;
+        if (expr instanceof MethodCallExpression mce) {
+            String method = mce.getMethodAsString();
+            if (method != null && knownProcesses.contains(method)) {
+                recordProcessCall(mce, knownProcesses, channelVarMap, calls, connections,
+                        conditionalInfo, conditionContext);
+            } else {
+                recordProcessCallsInExpression(mce.getObjectExpression(), knownProcesses,
+                        channelVarMap, calls, connections, conditionalInfo, conditionContext);
+            }
+            for (Expression arg : getArgs(mce)) {
+                recordProcessCallsInExpression(arg, knownProcesses, channelVarMap, calls,
+                        connections, conditionalInfo, conditionContext);
+            }
+        } else if (expr instanceof BinaryExpression be) {
+            recordProcessCallsInExpression(be.getLeftExpression(), knownProcesses, channelVarMap,
+                    calls, connections, conditionalInfo, conditionContext);
+            recordProcessCallsInExpression(be.getRightExpression(), knownProcesses, channelVarMap,
+                    calls, connections, conditionalInfo, conditionContext);
+        }
+    }
+
+    /**
+     * Register {@code mce} (a call to a known process) as a workflow call, tag it
+     * with the current conditional context if any, and add connections from any
+     * out-refs found among its arguments.
+     */
+    private void recordProcessCall(MethodCallExpression mce, Set<String> knownProcesses,
+            Map<String, String> channelVarMap, List<String> calls, List<String[]> connections,
+            Map<String, String[]> conditionalInfo, String conditionContext) {
+        String method = mce.getMethodAsString();
+        if (method == null || !knownProcesses.contains(method))
+            return;
+        if (!calls.contains(method))
+            calls.add(method);
+        if (conditionContext != null && !conditionalInfo.containsKey(method)) {
+            String[] parts = conditionContext.split(":", 2);
+            conditionalInfo.put(method, parts);
+        }
+        Set<String> outRefs = new LinkedHashSet<>();
+        for (Expression arg : getArgs(mce)) {
+            collectOutRefs(arg, knownProcesses, channelVarMap, outRefs);
+        }
+        for (String src : outRefs) {
+            connections.add(new String[] { src, method });
         }
     }
 
@@ -491,8 +635,17 @@ public class NextflowParser {
                 if (!channelVarMap.containsKey(varName)) {
                     Set<String> refs = new LinkedHashSet<>();
                     collectOutRefs(be.getRightExpression(), knownProcesses, channelVarMap, refs);
-                    if (!refs.isEmpty())
+                    if (!refs.isEmpty()) {
                         channelVarMap.put(varName, refs.iterator().next());
+                    } else {
+                        // Assignment-form process call: ch = PROC(args). The RHS is a bare
+                        // MethodCallExpression whose method name is a known process – map the
+                        // channel var directly to that process so downstream consumers connect
+                        // to it (mirrors the `.out`-ref resolution above).
+                        String proc = bareProcessCallName(be.getRightExpression(), knownProcesses);
+                        if (proc != null)
+                            channelVarMap.put(varName, proc);
+                    }
                 }
             }
         }
@@ -508,6 +661,23 @@ public class NextflowParser {
                 }
             }
         }
+    }
+
+    /**
+     * If {@code expr} is a bare (possibly implicit-{@code this}) call to a known
+     * process, e.g. {@code ALIGN(reads)}, returns the process name; otherwise
+     * {@code null}. Chained forms such as {@code ALIGN(reads).out} or
+     * {@code ALIGN(reads) | SORT} are NOT matched here – those already resolve via
+     * {@link #collectOutRefs} (the {@code .out} case) or the pipe-operator handling.
+     */
+    private String bareProcessCallName(Expression expr, Set<String> knownProcesses) {
+        if (expr instanceof MethodCallExpression mce) {
+            String method = mce.getMethodAsString();
+            if (method != null && knownProcesses.contains(method)) {
+                return method;
+            }
+        }
+        return null;
     }
 
     private String extractSingleVarFromClosure(ClosureExpression ce) {
@@ -548,6 +718,12 @@ public class NextflowParser {
                 collectOutRefs(obj, knownProcesses, channelVarMap, found);
             }
         } else if (expr instanceof MethodCallExpression mce) {
+            // Nested process call used directly as an argument, e.g. SORT(ALIGN(reads)):
+            // the inner call's return value is the output of that process.
+            String method = mce.getMethodAsString();
+            if (method != null && knownProcesses.contains(method)) {
+                found.add(method);
+            }
             collectOutRefs(mce.getObjectExpression(), knownProcesses, channelVarMap, found);
             for (Expression arg : getArgs(mce)) {
                 collectOutRefs(arg, knownProcesses, channelVarMap, found);
@@ -722,7 +898,11 @@ public class NextflowParser {
     }
 
     private static ParsedPipeline empty() {
+        return empty(0);
+    }
+
+    private static ParsedPipeline empty(int errorCount) {
         return new ParsedPipeline(Collections.emptyList(), Collections.emptyList(),
-                Collections.emptyList(), Collections.emptyList());
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyMap(), errorCount);
     }
 }

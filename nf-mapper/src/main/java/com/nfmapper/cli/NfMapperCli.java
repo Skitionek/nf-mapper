@@ -101,6 +101,12 @@ public class NfMapperCli implements Callable<Integer> {
             return 1;
         }
 
+        if (pipeline.isParseFailure()) {
+            err.println("nf-mapper: warning: no processes or workflows found in '" + input
+                    + "' (" + pipeline.getParseErrorCount() + " parse error(s))");
+            return 1;
+        }
+
         String diagram = renderPipeline(pipeline, title, configMap, rendererMode, themeMode);
 
         String outputContent = "md".equals(format) ? "```mermaid\n" + diagram + "\n```" : diagram;
@@ -248,6 +254,10 @@ public class NfMapperCli implements Callable<Integer> {
             try {
                 NextflowParser parser = new NextflowParser();
                 ParsedPipeline pipeline = parser.parseFile(pipelinePath);
+                if (pipeline.isParseFailure()) {
+                    throw new IOException("no processes or workflows found in '" + pipelinePath
+                            + "' (" + pipeline.getParseErrorCount() + " parse error(s))");
+                }
                 String diagram = renderPipeline(pipeline, blockTitle, configMap, renderer, theme);
                 String body = "md".equals(fmt) ? "```mermaid\n" + diagram + "\n```" : diagram;
                 segments.add(opening + "\n" + body + "\n" + closing);
