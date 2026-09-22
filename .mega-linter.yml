@@ -37,3 +37,16 @@ JAVA_CHECKSTYLE_CONFIG_FILE: checkstyle.xml
 # "duplicate variable declaration" across script:/stub: blocks and
 # "unreachable code" after Nextflow labeled-branch return statements.
 GROOVY_NPM_GROOVY_LINT_FILTER_REGEX_EXCLUDE: ".*\\.nf$"
+
+# trivy walks the whole workspace itself, and checkov runs at the same time.
+# Checkov's GitHub-configuration scan writes and then removes github_conf/, so
+# trivy regularly stats a file that has just disappeared and aborts the scan:
+#
+#   FATAL run error: fs scan error: ... unable to filter filesystem: walk error
+#   range error: stat github_conf/branch_protection_rules.json: no such file or
+#   directory
+#
+# Nothing in that directory belongs to this repository, so skip it.
+REPOSITORY_TRIVY_ARGUMENTS:
+  - "--skip-dirs"
+  - "github_conf"
