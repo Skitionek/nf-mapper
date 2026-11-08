@@ -12,6 +12,10 @@ nf-mapper parses `.nf` files using the [official Nextflow AST library](https://w
 each process is a commit, the primary processing chain stays on `main`,
 and parallel or QC branches diverge just like in a real git history.
 
+[![nf-mapper turning the nf-core/fetchngs SRA workflow into a Mermaid git graph](docs/media/nf-mapper-poster.jpg)](docs/media/nf-mapper.mp4)
+
+*33-second demo: a real run on the nf-core/fetchngs SRA workflow from the test fixtures, then the generated diagram. Click the image to play.*
+
 ## Table of contents
 
 - [Why nf-mapper?](#why-nf-mapper)
