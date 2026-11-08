@@ -7,7 +7,7 @@
 
 **Convert Nextflow pipelines into [Mermaid](https://mermaid.js.org/) `gitGraph` diagrams.**
 
-nf-mapper parses `.nf` files using the [official Nextflow AST library](https://www.nextflow.io/docs/latest/developer/nextflow.ast.html)
+nf-mapper parses `.nf` files using the [official Nextflow AST library](https://central.sonatype.com/artifact/io.nextflow/nf-lang)
 (`io.nextflow:nf-lang`) and renders the pipeline's process graph as a `gitGraph`:
 each process is a commit, the primary processing chain stays on `main`,
 and parallel or QC branches diverge just like in a real git history.
@@ -93,7 +93,7 @@ it easy to:
 
 ### Nextflow `--with-dag`
 
-Reference: [https://nextflow.io/docs/latest/developer/nextflow.dag.html](https://nextflow.io/docs/latest/developer/nextflow.dag.html)
+Reference: [https://docs.seqera.io/nextflow/developer/diagram/](https://docs.seqera.io/nextflow/developer/diagram/)
 
 - Like nf-mapper, Nextflow's DAG machinery is grounded in native Nextflow internals.
 - In practice, `nextflow --with-dag` output can become hard to read for complex,
@@ -599,7 +599,7 @@ Then update each block independently:
 ## How it works
 
 1. **Parse** – The `.nf` file is parsed using the
-   [official Nextflow AST library](https://www.nextflow.io/docs/latest/developer/nextflow.ast.html)
+   [official Nextflow AST library](https://central.sonatype.com/artifact/io.nextflow/nf-lang)
    (`io.nextflow:nf-lang`). The `ScriptAstBuilder` produces a `ScriptNode` —
    a `ModuleNode` subclass that exposes the Nextflow DSL constructs via clean
    typed getters.
